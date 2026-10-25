@@ -66,10 +66,30 @@ defmodule Elmx.Pebble.Contract.CmdSub do
 
   @cmds [
     Row.cmd(:none, 0, [], :none),
-    Row.cmd(:timer_after_ms, 1, ~w(Pebble.Cmd.timerAfter Elm.Kernel.PebbleWatch.timerAfter), {:timer, "after"}),
-    Row.cmd(:storage_write_int, 2, ~w(Pebble.Storage.writeInt Pebble.Cmd.storageWriteInt Elm.Kernel.PebbleWatch.storageWriteInt), {:storage, "write_int"}),
-    Row.cmd(:storage_read_int, 3, ~w(Pebble.Storage.readInt Pebble.Cmd.storageReadInt Elm.Kernel.PebbleWatch.storageReadInt), {:storage, "read_int"}),
-    Row.cmd(:storage_delete, 4, ~w(Pebble.Storage.delete Pebble.Cmd.storageDelete Elm.Kernel.PebbleWatch.storageDelete), {:storage, "delete"}),
+    Row.cmd(
+      :timer_after_ms,
+      1,
+      ~w(Pebble.Cmd.timerAfter Elm.Kernel.PebbleWatch.timerAfter),
+      {:timer, "after"}
+    ),
+    Row.cmd(
+      :storage_write_int,
+      2,
+      ~w(Pebble.Storage.writeInt Pebble.Cmd.storageWriteInt Elm.Kernel.PebbleWatch.storageWriteInt),
+      {:storage, "write_int"}
+    ),
+    Row.cmd(
+      :storage_read_int,
+      3,
+      ~w(Pebble.Storage.readInt Pebble.Cmd.storageReadInt Elm.Kernel.PebbleWatch.storageReadInt),
+      {:storage, "read_int"}
+    ),
+    Row.cmd(
+      :storage_delete,
+      4,
+      ~w(Pebble.Storage.delete Pebble.Cmd.storageDelete Elm.Kernel.PebbleWatch.storageDelete),
+      {:storage, "delete"}
+    ),
     Row.cmd(
       :companion_send,
       5,
@@ -118,7 +138,12 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Cmd.getFirmwareVersion Pebble.WatchInfo.getFirmwareVersion Elm.Kernel.PebbleWatch.getFirmwareVersion),
       {:device, "firmware_version"}
     ),
-    Row.cmd(:vibes_cancel, 13, ~w(Pebble.Vibes.cancel Pebble.Cmd.vibesCancel Elm.Kernel.PebbleWatch.vibesCancel), {:effect, "vibes", "cancel"}),
+    Row.cmd(
+      :vibes_cancel,
+      13,
+      ~w(Pebble.Vibes.cancel Pebble.Cmd.vibesCancel Elm.Kernel.PebbleWatch.vibesCancel),
+      {:effect, "vibes", "cancel"}
+    ),
     Row.cmd(
       :vibes_short_pulse,
       14,
@@ -137,17 +162,42 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Vibes.doublePulse Pebble.Cmd.vibesDoublePulse Elm.Kernel.PebbleWatch.vibesDoublePulse),
       {:effect, "vibes", "double_pulse"}
     ),
-    Row.cmd(:get_watch_color, 17, ~w(Pebble.WatchInfo.getColor Elm.Kernel.PebbleWatch.getColor), {:device, "watch_color"}),
+    Row.cmd(
+      :get_watch_color,
+      17,
+      ~w(Pebble.WatchInfo.getColor Elm.Kernel.PebbleWatch.getColor),
+      {:device, "watch_color"}
+    ),
     Row.cmd(
       :wakeup_schedule_after_seconds,
       18,
       ~w(Pebble.Wakeup.scheduleAfterSeconds Elm.Kernel.PebbleWatch.wakeupScheduleAfterSeconds),
       {:stub_none, :wakeup}
     ),
-    Row.cmd(:wakeup_cancel, 19, ~w(Pebble.Wakeup.cancel Elm.Kernel.PebbleWatch.wakeupCancel), {:stub_none, :wakeup}),
-    Row.cmd(:log_info_code, 20, ~w(Pebble.Log.infoCode Elm.Kernel.PebbleWatch.logInfoCode), {:stub_none, :log}),
-    Row.cmd(:log_warn_code, 21, ~w(Pebble.Log.warnCode Elm.Kernel.PebbleWatch.logWarnCode), {:stub_none, :log}),
-    Row.cmd(:log_error_code, 22, ~w(Pebble.Log.errorCode Elm.Kernel.PebbleWatch.logErrorCode), {:stub_none, :log}),
+    Row.cmd(
+      :wakeup_cancel,
+      19,
+      ~w(Pebble.Wakeup.cancel Elm.Kernel.PebbleWatch.wakeupCancel),
+      {:stub_none, :wakeup}
+    ),
+    Row.cmd(
+      :log_info_code,
+      20,
+      ~w(Pebble.Log.infoCode Elm.Kernel.PebbleWatch.logInfoCode),
+      {:stub_none, :log}
+    ),
+    Row.cmd(
+      :log_warn_code,
+      21,
+      ~w(Pebble.Log.warnCode Elm.Kernel.PebbleWatch.logWarnCode),
+      {:stub_none, :log}
+    ),
+    Row.cmd(
+      :log_error_code,
+      22,
+      ~w(Pebble.Log.errorCode Elm.Kernel.PebbleWatch.logErrorCode),
+      {:stub_none, :log}
+    ),
     Row.cmd(
       :get_current_date_time,
       23,
@@ -178,7 +228,12 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Storage.readString Elm.Kernel.PebbleWatch.storageReadString),
       {:storage, "read_string"}
     ),
-    Row.cmd(:random_generate, 28, ~w(Random.generate Elm.Kernel.Random.generate), {:device, "random"}),
+    Row.cmd(
+      :random_generate,
+      28,
+      ~w(Random.generate Elm.Kernel.Random.generate),
+      {:device, "random"}
+    ),
     Row.cmd(
       :health_value,
       29,
@@ -209,11 +264,36 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Vibes.pattern Elm.Kernel.PebbleWatch.vibesCustomPattern),
       {:effect, "vibes", "pattern"}
     ),
-    Row.cmd(:data_log_bytes, 34, ~w(Pebble.DataLog.logBytes Elm.Kernel.PebbleWatch.dataLogBytes), {:data_log, "bytes"}),
-    Row.cmd(:data_log_int32, 35, ~w(Pebble.DataLog.logInt32 Elm.Kernel.PebbleWatch.dataLogInt32), {:data_log, "int32"}),
-    Row.cmd(:compass_peek, 36, ~w(Pebble.Compass.current Elm.Kernel.PebbleWatch.compassCurrent), {:device, "compass_peek"}),
-    Row.cmd(:dictation_start, 37, ~w(Pebble.Dictation.start Elm.Kernel.PebbleWatch.dictationStart), {:dictation, "start"}),
-    Row.cmd(:dictation_stop, 38, ~w(Pebble.Dictation.stop Elm.Kernel.PebbleWatch.dictationStop), {:dictation, "stop"}),
+    Row.cmd(
+      :data_log_bytes,
+      34,
+      ~w(Pebble.DataLog.logBytes Elm.Kernel.PebbleWatch.dataLogBytes),
+      {:data_log, "bytes"}
+    ),
+    Row.cmd(
+      :data_log_int32,
+      35,
+      ~w(Pebble.DataLog.logInt32 Elm.Kernel.PebbleWatch.dataLogInt32),
+      {:data_log, "int32"}
+    ),
+    Row.cmd(
+      :compass_peek,
+      36,
+      ~w(Pebble.Compass.current Elm.Kernel.PebbleWatch.compassCurrent),
+      {:device, "compass_peek"}
+    ),
+    Row.cmd(
+      :dictation_start,
+      37,
+      ~w(Pebble.Dictation.start Elm.Kernel.PebbleWatch.dictationStart),
+      {:dictation, "start"}
+    ),
+    Row.cmd(
+      :dictation_stop,
+      38,
+      ~w(Pebble.Dictation.stop Elm.Kernel.PebbleWatch.dictationStop),
+      {:dictation, "stop"}
+    ),
     Row.cmd(
       :unobstructed_bounds_peek,
       39,
@@ -232,7 +312,12 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Storage.maxSize Elm.Kernel.PebbleWatch.storageReadMaxSize),
       {:storage, "read_max_size"}
     ),
-    Row.cmd(:speaker_is_muted, 42, ~w(Pebble.Speaker.isMuted Elm.Kernel.PebbleWatch.speakerIsMuted), {:device, "speaker_is_muted"}),
+    Row.cmd(
+      :speaker_is_muted,
+      42,
+      ~w(Pebble.Speaker.isMuted Elm.Kernel.PebbleWatch.speakerIsMuted),
+      {:device, "speaker_is_muted"}
+    ),
     Row.cmd(
       :speaker_play_tone,
       43,
@@ -251,7 +336,12 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.Speaker.playTracks Elm.Kernel.PebbleWatch.speakerPlayTracks),
       {:effect, "speaker", "play_tracks"}
     ),
-    Row.cmd(:speaker_stop, 46, ~w(Pebble.Speaker.stop Elm.Kernel.PebbleWatch.speakerStop), {:effect, "speaker", "stop"}),
+    Row.cmd(
+      :speaker_stop,
+      46,
+      ~w(Pebble.Speaker.stop Elm.Kernel.PebbleWatch.speakerStop),
+      {:effect, "speaker", "stop"}
+    ),
     Row.cmd(
       :speaker_set_volume,
       47,
@@ -317,6 +407,30 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       57,
       ~w(Pebble.Touch.enableNavigation Elm.Kernel.PebbleWatch.touchEnableNavigation),
       {:stub_none, :touch}
+    ),
+    Row.cmd(
+      :touch_disable_bridge,
+      58,
+      ~w(Pebble.Touch.disableBridge Elm.Kernel.PebbleWatch.touchDisableBridge),
+      {:stub_none, :touch}
+    ),
+    Row.cmd(
+      :backlight_color,
+      59,
+      ~w(Pebble.Light.setColor Elm.Kernel.PebbleWatch.backlightColor),
+      {:stub_none, :backlight}
+    ),
+    Row.cmd(
+      :backlight_reset_color,
+      60,
+      ~w(Pebble.Light.resetColor Elm.Kernel.PebbleWatch.backlightResetColor),
+      {:stub_none, :backlight}
+    ),
+    Row.cmd(
+      :backlight_rgb888,
+      61,
+      ~w(Pebble.Light.setRgb Elm.Kernel.PebbleWatch.backlightRgb888),
+      {:stub_none, :backlight}
     )
   ]
 
@@ -327,9 +441,15 @@ defmodule Elmx.Pebble.Contract.CmdSub do
     Row.sub(:button_up, 2, "ELMC_PEBBLE_SUB_BUTTON_UP", "ELMC_SUBSCRIPTION_BUTTON_UP", ~w(
       Elm.Kernel.PebbleWatch.onButtonUp
     )),
-    Row.sub(:button_select, 4, "ELMC_PEBBLE_SUB_BUTTON_SELECT", "ELMC_SUBSCRIPTION_BUTTON_SELECT", ~w(
+    Row.sub(
+      :button_select,
+      4,
+      "ELMC_PEBBLE_SUB_BUTTON_SELECT",
+      "ELMC_SUBSCRIPTION_BUTTON_SELECT",
+      ~w(
       Elm.Kernel.PebbleWatch.onButtonSelect
-    )),
+    )
+    ),
     Row.sub(:button_down, 8, "ELMC_PEBBLE_SUB_BUTTON_DOWN", "ELMC_SUBSCRIPTION_BUTTON_DOWN", ~w(
       Elm.Kernel.PebbleWatch.onButtonDown
     )),
@@ -374,51 +494,99 @@ defmodule Elmx.Pebble.Contract.CmdSub do
     Row.sub(:day_change, 65536, "ELMC_PEBBLE_SUB_DAY", "ELMC_SUBSCRIPTION_DAY_CHANGE", ~w(
       Pebble.Events.onDayChange Elm.Kernel.PebbleWatch.onDayChange
     )),
-    Row.sub(:month_change, 131072, "ELMC_PEBBLE_SUB_MONTH", "ELMC_SUBSCRIPTION_MONTH_CHANGE", ~w(
+    Row.sub(:month_change, 131_072, "ELMC_PEBBLE_SUB_MONTH", "ELMC_SUBSCRIPTION_MONTH_CHANGE", ~w(
       Pebble.Events.onMonthChange Elm.Kernel.PebbleWatch.onMonthChange
     )),
-    Row.sub(:year_change, 262144, "ELMC_PEBBLE_SUB_YEAR", "ELMC_SUBSCRIPTION_YEAR_CHANGE", ~w(
+    Row.sub(:year_change, 262_144, "ELMC_PEBBLE_SUB_YEAR", "ELMC_SUBSCRIPTION_YEAR_CHANGE", ~w(
       Pebble.Events.onYearChange Elm.Kernel.PebbleWatch.onYearChange
     )),
-    Row.sub(:app_focus, 524288, "ELMC_PEBBLE_SUB_APP_FOCUS", "ELMC_SUBSCRIPTION_APP_FOCUS", ~w(
+    Row.sub(:app_focus, 524_288, "ELMC_PEBBLE_SUB_APP_FOCUS", "ELMC_SUBSCRIPTION_APP_FOCUS", ~w(
       Pebble.AppFocus.onChange Elm.Kernel.PebbleWatch.onAppFocusChange
     )),
-    Row.sub(:compass, 1048576, "ELMC_PEBBLE_SUB_COMPASS", "ELMC_SUBSCRIPTION_COMPASS", ~w(
+    Row.sub(:compass, 1_048_576, "ELMC_PEBBLE_SUB_COMPASS", "ELMC_SUBSCRIPTION_COMPASS", ~w(
       Pebble.Compass.onChange Elm.Kernel.PebbleWatch.onCompassChange
     )),
-    Row.sub(:dictation, 2097152, "ELMC_PEBBLE_SUB_DICTATION", "ELMC_SUBSCRIPTION_DICTATION", ~w(
+    Row.sub(:dictation, 2_097_152, "ELMC_PEBBLE_SUB_DICTATION", "ELMC_SUBSCRIPTION_DICTATION", ~w(
       Pebble.Dictation.onStatus Pebble.Dictation.onResult
       Elm.Kernel.PebbleWatch.onDictationStatus Elm.Kernel.PebbleWatch.onDictationResult
     )),
-    Row.sub(:unobstructed_area, 4194304, "ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA", "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA", ~w(
+    Row.sub(
+      :unobstructed_area,
+      4_194_304,
+      "ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA",
+      "ELMC_SUBSCRIPTION_UNOBSTRUCTED_AREA",
+      ~w(
       Pebble.UnobstructedArea.onWillChange Pebble.UnobstructedArea.onChanging Pebble.UnobstructedArea.onDidChange
       Elm.Kernel.PebbleWatch.onUnobstructedWillChange Elm.Kernel.PebbleWatch.onUnobstructedChanging
       Elm.Kernel.PebbleWatch.onUnobstructedDidChange
-    )),
-    Row.sub(:animation_finished, 8388608, "ELMC_PEBBLE_SUB_ANIMATION_FINISHED", "ELMC_SUBSCRIPTION_ANIMATION_FINISHED", ~w(
+    )
+    ),
+    Row.sub(
+      :animation_finished,
+      8_388_608,
+      "ELMC_PEBBLE_SUB_ANIMATION_FINISHED",
+      "ELMC_SUBSCRIPTION_ANIMATION_FINISHED",
+      ~w(
       Pebble.Events.onAnimationFinished Elm.Kernel.PebbleWatch.onAnimationFinished
-    )),
-    Row.sub(:backlight, 16777216, "ELMC_PEBBLE_SUB_BACKLIGHT", "ELMC_SUBSCRIPTION_BACKLIGHT", ~w(
+    )
+    ),
+    Row.sub(
+      :backlight,
+      16_777_216,
+      "ELMC_PEBBLE_SUB_BACKLIGHT",
+      "ELMC_SUBSCRIPTION_BACKLIGHT",
+      ~w(
       Pebble.Light.onChange Elm.Kernel.PebbleWatch.onBacklightChange
-    )),
-    Row.sub(:screen_change, 33554432, "ELMC_PEBBLE_SUB_SCREEN_CHANGE", "ELMC_SUBSCRIPTION_SCREEN_CHANGE", ~w(
+    )
+    ),
+    Row.sub(
+      :screen_change,
+      33_554_432,
+      "ELMC_PEBBLE_SUB_SCREEN_CHANGE",
+      "ELMC_SUBSCRIPTION_SCREEN_CHANGE",
+      ~w(
       Pebble.Platform.onScreenChange Elm.Kernel.PebbleWatch.onScreenChange
-    )),
-    Row.sub(:speaker_finished, 67108864, "ELMC_PEBBLE_SUB_SPEAKER_FINISHED", "ELMC_SUBSCRIPTION_SPEAKER_FINISHED", ~w(
+    )
+    ),
+    Row.sub(
+      :speaker_finished,
+      67_108_864,
+      "ELMC_PEBBLE_SUB_SPEAKER_FINISHED",
+      "ELMC_SUBSCRIPTION_SPEAKER_FINISHED",
+      ~w(
       Pebble.Speaker.onFinished Elm.Kernel.PebbleWatch.onSpeakerFinished
-    )),
-    Row.sub(:health, 2147483648, "ELMC_PEBBLE_SUB_HEALTH", "ELMC_SUBSCRIPTION_HEALTH", ~w(
+    )
+    ),
+    Row.sub(:health, 2_147_483_648, "ELMC_PEBBLE_SUB_HEALTH", "ELMC_SUBSCRIPTION_HEALTH", ~w(
       Pebble.Health.onEvent Elm.Kernel.PebbleWatch.onHealthEvent
     )),
-    Row.sub(:touch_tap, 134217728, "ELMC_PEBBLE_SUB_TOUCH_TAP", "ELMC_SUBSCRIPTION_TOUCH_TAP", ~w(
+    Row.sub(
+      :touch_tap,
+      134_217_728,
+      "ELMC_PEBBLE_SUB_TOUCH_TAP",
+      "ELMC_SUBSCRIPTION_TOUCH_TAP",
+      ~w(
       Pebble.Touch.onTap Elm.Kernel.PebbleWatch.onTouchTap
-    )),
-    Row.sub(:touch_pan, 268435456, "ELMC_PEBBLE_SUB_TOUCH_PAN", "ELMC_SUBSCRIPTION_TOUCH_PAN", ~w(
+    )
+    ),
+    Row.sub(
+      :touch_pan,
+      268_435_456,
+      "ELMC_PEBBLE_SUB_TOUCH_PAN",
+      "ELMC_SUBSCRIPTION_TOUCH_PAN",
+      ~w(
       Pebble.Touch.onPan Elm.Kernel.PebbleWatch.onTouchPanHorizontal Elm.Kernel.PebbleWatch.onTouchPanVertical
-    )),
-    Row.sub(:touch_swipe, 536870912, "ELMC_PEBBLE_SUB_TOUCH_SWIPE", "ELMC_SUBSCRIPTION_TOUCH_SWIPE", ~w(
+    )
+    ),
+    Row.sub(
+      :touch_swipe,
+      536_870_912,
+      "ELMC_PEBBLE_SUB_TOUCH_SWIPE",
+      "ELMC_SUBSCRIPTION_TOUCH_SWIPE",
+      ~w(
       Pebble.Touch.onSwipe Elm.Kernel.PebbleWatch.onTouchSwipe
-    ))
+    )
+    )
   ]
 
   @spec cmds() :: [cmd_row()]
@@ -476,5 +644,4 @@ defmodule Elmx.Pebble.Contract.CmdSub do
   def elmx_wire_kind({:protocol, _}), do: "protocol"
   def elmx_wire_kind({:dictation, _}), do: "cmd.dictation.followup"
   def elmx_wire_kind({:stub_none, _}), do: nil
-
 end

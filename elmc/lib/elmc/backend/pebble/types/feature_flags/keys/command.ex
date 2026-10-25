@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
   @moduledoc false
   alias Elmc.Types, as: Types
 
-
   alias Elmc.Backend.Pebble.Types
 
   @storage_keys [
@@ -19,6 +18,9 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
   @system_keys [
     :cmd_timer_after_ms,
     :cmd_backlight,
+    :cmd_backlight_color,
+    :cmd_backlight_reset_color,
+    :cmd_backlight_rgb888,
     :cmd_get_current_time_string,
     :cmd_get_current_date_time,
     :cmd_get_battery_level,
@@ -42,7 +44,12 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_wakeup_cancel
   ]
 
-  @backlight_keys [:cmd_backlight]
+  @backlight_keys [
+    :cmd_backlight,
+    :cmd_backlight_color,
+    :cmd_backlight_reset_color,
+    :cmd_backlight_rgb888
+  ]
 
   @time_timezone_keys [
     :cmd_get_current_time_string,
@@ -94,7 +101,8 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_unobstructed_bounds_peek,
     :cmd_alarm_next,
     :cmd_touch_supported,
-    :cmd_touch_enable_navigation
+    :cmd_touch_enable_navigation,
+    :cmd_touch_disable_bridge
   ]
 
   @speaker_keys [

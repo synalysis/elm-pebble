@@ -3,7 +3,10 @@ defmodule Ide.Emulator.SdkImages do
 
   alias Ide.Emulator.Types
 
-  @default_sdk_version "4.9.169"
+  @default_sdk_version "4.33.1"
+
+  @spec default_sdk_version() :: String.t()
+  def default_sdk_version, do: @default_sdk_version
   @download_server "https://sdk.repebble.com"
 
   @spec ensure_platform_images(String.t(), keyword()) :: :ok | {:error, Types.sdk_error()}

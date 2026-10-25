@@ -78,7 +78,7 @@ RUN apt-get update && \
       libfreetype6 \
       nodejs \
       npm && \
-    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pebble-tool && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install 'pebble-tool==5.0.40' && \
     npm install -g elm elm-format && \
     rm -rf /var/lib/apt/lists/*
 

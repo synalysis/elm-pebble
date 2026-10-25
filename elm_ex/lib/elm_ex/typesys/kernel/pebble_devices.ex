@@ -12,13 +12,15 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
     "Pebble.Health.value" => "Pebble.Health.Metric -> (Int -> msg) -> Cmd msg",
     "Pebble.Health.sumToday" => "Pebble.Health.Metric -> (Int -> msg) -> Cmd msg",
     "Pebble.Health.sum" => "Pebble.Health.Metric -> Int -> Int -> (Int -> msg) -> Cmd msg",
-    "Pebble.Health.accessible" => "Pebble.Health.Metric -> Int -> Int -> (Bool -> msg) -> Cmd msg",
+    "Pebble.Health.accessible" =>
+      "Pebble.Health.Metric -> Int -> Int -> (Bool -> msg) -> Cmd msg",
     "Pebble.Health.hrvPpiMs" => "(Int -> msg) -> Cmd msg",
     "Pebble.Health.setHeartRateSamplePeriod" => "Int -> Cmd msg",
     "Pebble.Health.setHrvSamplePeriod" => "Int -> Cmd msg",
     "Pebble.Health.onEvent" => "(Pebble.Health.Event -> msg) -> Sub msg",
     "Pebble.Touch.supported" => "(Bool -> msg) -> Cmd msg",
     "Pebble.Touch.enableNavigation" => "Cmd msg",
+    "Pebble.Touch.disableBridge" => "Cmd msg",
     "Pebble.Touch.onTap" => "(Pebble.Touch.Point -> msg) -> Sub msg",
     "Pebble.Touch.onPan" => "Pebble.Touch.Axis -> (Pebble.Touch.PanEvent -> msg) -> Sub msg",
     "Pebble.Touch.onSwipe" =>
@@ -39,8 +41,7 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
     "Pebble.Dictation.start" => "Cmd msg",
     "Pebble.Dictation.stop" => "Cmd msg",
     "Pebble.Dictation.onStatus" => "(Pebble.Dictation.Status -> msg) -> Sub msg",
-    "Pebble.Dictation.onResult" =>
-      "(Result Pebble.Dictation.Error String -> msg) -> Sub msg",
+    "Pebble.Dictation.onResult" => "(Result Pebble.Dictation.Error String -> msg) -> Sub msg",
     "Pebble.Speaker.maxNotes" => "Int",
     "Pebble.Speaker.maxTracks" => "Int",
     "Pebble.Speaker.maxSampleBytesTotal" => "Int",
@@ -80,8 +81,10 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
     "Pebble.Game.Collision.circleCircle" =>
       "Pebble.Game.Collision.Circle -> Pebble.Game.Collision.Circle -> Bool",
     "Pebble.Game.Math.vec2" => "Float -> Float -> Pebble.Game.Math.Vec2",
-    "Pebble.Game.Math.add" => "Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
-    "Pebble.Game.Math.sub" => "Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
+    "Pebble.Game.Math.add" =>
+      "Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
+    "Pebble.Game.Math.sub" =>
+      "Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
     "Pebble.Game.Math.scale" => "Float -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
     "Pebble.Game.Math.lengthSquared" => "Pebble.Game.Math.Vec2 -> Float",
     "Pebble.Game.Math.distanceSquared" =>
@@ -99,7 +102,7 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
   @aliases %{
     "Pebble.Touch.Point" => "{ x : Int, y : Int }",
     "Pebble.Touch.PanEvent" =>
-      "{ phase : Pebble.Touch.Phase, totalX : Int, totalY : Int, sinceStartX : Int, sinceStartY : Int, velocityX : Int, velocityY : Int }",
+      "{ phase : Pebble.Touch.Phase, totalX : Int, totalY : Int, sinceStartX : Int, sinceStartY : Int, sincePrevX : Int, sincePrevY : Int, velocityX : Int, velocityY : Int }",
     "Pebble.Touch.SwipeEvent" =>
       "{ direction : Pebble.Touch.Direction, velocityX : Int, velocityY : Int }",
     "Pebble.Compass.Heading" => "{ degrees : Float, isValid : Bool }",
@@ -110,8 +113,7 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
       "{ midiNote : Int, waveform : Pebble.Speaker.Waveform, durationMs : Int, velocity : Int }",
     "Pebble.Speaker.Track" =>
       "{ notes : List Pebble.Speaker.Note, sample : Maybe Pebble.Speaker.Resources.Sample }",
-    "Pebble.Speaker.Limits" =>
-      "{ maxNotes : Int, maxTracks : Int, maxSampleBytesTotal : Int }",
+    "Pebble.Speaker.Limits" => "{ maxNotes : Int, maxTracks : Int, maxSampleBytesTotal : Int }",
     "Pebble.Ui.Resources.StaticBitmapInfo" =>
       "{ staticBitmap : Pebble.Ui.Resources.StaticBitmap, name : String, width : Int, height : Int }",
     "Pebble.Ui.Resources.AnimatedBitmapInfo" =>
@@ -228,7 +230,9 @@ defmodule ElmEx.Typesys.Kernel.PebbleDevices do
 
   defp install_signatures(env) do
     Enum.reduce(@signatures, env, fn {name, src}, acc ->
-      put_parsed(acc, name, src, fn acc, type -> Env.put_value(acc, name, Env.generalize(acc, type)) end)
+      put_parsed(acc, name, src, fn acc, type ->
+        Env.put_value(acc, name, Env.generalize(acc, type))
+      end)
     end)
   end
 

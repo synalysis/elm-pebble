@@ -180,6 +180,9 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
         version_candidates ++
         [
           Path.expand(
+            "~/.pebble-sdk/SDKs/4.33.1/toolchain/arm-none-eabi/bin/arm-none-eabi-size"
+          ),
+          Path.expand(
             "~/.pebble-sdk/SDKs/4.9.169/toolchain/arm-none-eabi/bin/arm-none-eabi-size"
           )
         ]

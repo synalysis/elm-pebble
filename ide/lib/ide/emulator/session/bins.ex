@@ -163,12 +163,16 @@ defmodule Ide.Emulator.Session.Bins do
   defp sdk_roots_for_os(home) do
     linux_roots = [
       Path.expand(".pebble-sdk/SDKs/current", home),
+      Path.expand(".pebble-sdk/SDKs/4.33.1", home),
+      Path.expand(".pebble-sdk/SDKs/4.17", home),
       Path.expand(".pebble-sdk/SDKs/4.9.169", home),
       Path.expand(".pebble-sdk/SDKs/4.9.148", home)
     ]
 
     mac_roots = [
       Path.expand("Library/Application Support/Pebble SDK/SDKs/current", home),
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.33.1", home),
+      Path.expand("Library/Application Support/Pebble SDK/SDKs/4.17", home),
       Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.169", home),
       Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.148", home),
       Path.expand("Library/Application Support/Pebble SDK/SDKs/4.9.77", home)

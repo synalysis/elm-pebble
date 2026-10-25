@@ -1,5 +1,8 @@
 module Elm.Kernel.PebbleWatch exposing
     ( backlight
+    , backlightColor
+    , backlightResetColor
+    , backlightRgb888
     , batch
     , companionSend
     , compassCurrent
@@ -81,6 +84,7 @@ module Elm.Kernel.PebbleWatch exposing
     , storageWriteInt
     , storageWriteString
     , timerAfter
+    , touchDisableBridge
     , touchEnableNavigation
     , touchSupported
     , unobstructedCurrentBounds
@@ -272,6 +276,29 @@ backlight mode =
     Cmd.none
 
 
+backlightColor : Int -> Cmd msg
+backlightColor color =
+    let
+        keep =
+            color
+    in
+    Cmd.none
+
+
+backlightRgb888 : Int -> Cmd msg
+backlightRgb888 rgb =
+    let
+        keep =
+            rgb
+    in
+    Cmd.none
+
+
+backlightResetColor : Cmd msg
+backlightResetColor =
+    Cmd.none
+
+
 getCurrentTimeString : (String -> msg) -> Cmd msg
 getCurrentTimeString toMsg =
     let
@@ -392,6 +419,11 @@ touchSupported toMsg =
 
 touchEnableNavigation : Cmd msg
 touchEnableNavigation =
+    Cmd.none
+
+
+touchDisableBridge : Cmd msg
+touchDisableBridge =
     Cmd.none
 
 

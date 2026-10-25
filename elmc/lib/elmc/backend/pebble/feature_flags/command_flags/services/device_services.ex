@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.DeviceServices 
   @moduledoc false
   alias Elmc.Types, as: Types
 
-
   alias Elmc.Backend.Pebble.FeatureFlags.TargetSet
   alias Elmc.Backend.Pebble.Types
 
@@ -35,7 +34,10 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.DeviceServices 
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchSupported"),
       cmd_touch_enable_navigation:
         TargetSet.member?(targets, "Pebble.Touch.enableNavigation") or
-          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchEnableNavigation")
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchEnableNavigation"),
+      cmd_touch_disable_bridge:
+        TargetSet.member?(targets, "Pebble.Touch.disableBridge") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchDisableBridge")
     }
   end
 end

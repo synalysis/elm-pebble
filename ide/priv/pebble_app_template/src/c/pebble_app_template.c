@@ -1551,6 +1551,44 @@ static void apply_pending_cmd(void) {
       break;
     }
 #endif
+#if ELMC_PEBBLE_FEATURE_CMD_TOUCH_DISABLE_BRIDGE
+    case ELMC_PEBBLE_CMD_TOUCH_DISABLE_BRIDGE: {
+#if PBL_API_EXISTS(window_set_touch_bridge_disabled)
+      if (s_main_window) {
+        window_set_touch_bridge_disabled(s_main_window, true);
+      }
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd touch_disable_bridge");
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT_COLOR
+    case ELMC_PEBBLE_CMD_BACKLIGHT_COLOR: {
+#if PBL_API_EXISTS(light_set_color)
+      light_set_color((GColor){.argb = (uint8_t)(cmd.p0 & 0xff)});
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd backlight_color argb=%ld", (long)(cmd.p0 & 0xff));
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT_RESET_COLOR
+    case ELMC_PEBBLE_CMD_BACKLIGHT_RESET_COLOR: {
+#if PBL_API_EXISTS(light_set_system_color)
+      light_set_system_color();
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd backlight_reset_color");
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT_RGB888
+    case ELMC_PEBBLE_CMD_BACKLIGHT_RGB888: {
+#if PBL_API_EXISTS(light_set_color_rgb888)
+      light_set_color_rgb888((uint32_t)cmd.p0);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd backlight_rgb888 rgb=%ld", (long)cmd.p0);
+      break;
+    }
+#endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_CLOCK_STYLE_24H
     case ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H: {
       bool style24h = clock_is_24h_style();
@@ -4751,6 +4789,11 @@ static void touch_tap_handler(const Recognizer *recognizer, RecognizerEvent even
 static void touch_pan_handler(const Recognizer *recognizer, RecognizerEvent event) {
   GPoint total = pan_recognizer_get_total_delta(recognizer);
   GPoint since_start = pan_recognizer_get_delta_since_start(recognizer);
+#if PBL_API_EXISTS(pan_recognizer_get_delta_since_prev)
+  GPoint since_prev = pan_recognizer_get_delta_since_prev(recognizer);
+#else
+  GPoint since_prev = GPointZero;
+#endif
   GPoint velocity = pan_recognizer_get_velocity(recognizer);
   int rc = elmc_pebble_dispatch_touch_pan(
       &s_elm_app,
@@ -4759,6 +4802,8 @@ static void touch_pan_handler(const Recognizer *recognizer, RecognizerEvent even
       total.y,
       since_start.x,
       since_start.y,
+      since_prev.x,
+      since_prev.y,
       velocity.x,
       velocity.y);
   APP_LOG(APP_LOG_LEVEL_INFO, "touch pan phase=%d rc=%d", recognizer_event_to_phase(event), rc);

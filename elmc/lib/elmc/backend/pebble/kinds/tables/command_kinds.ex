@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.Kinds.Tables.CommandKinds do
   @moduledoc false
   alias Elmc.Types, as: Types
 
-
   alias Elmc.Backend.Pebble.Kinds.Tables.Lookup
   alias Elmc.Backend.Pebble.Kinds.Types, as: KindTypes
   alias Elmc.Backend.Pebble.Types
@@ -65,7 +64,11 @@ defmodule Elmc.Backend.Pebble.Kinds.Tables.CommandKinds do
     health_set_heart_rate_sample_period: 54,
     alarm_next: 55,
     touch_supported: 56,
-    touch_enable_navigation: 57
+    touch_enable_navigation: 57,
+    touch_disable_bridge: 58,
+    backlight_color: 59,
+    backlight_reset_color: 60,
+    backlight_rgb888: 61
   ]
 
   @command_kind_ids Map.new(@command_kinds)

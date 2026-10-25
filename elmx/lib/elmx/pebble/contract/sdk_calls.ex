@@ -61,7 +61,11 @@ defmodule Elmx.Pebble.Contract.SdkCalls do
     health_set_heart_rate_sample_period: ["health_service_set_heart_rate_sample_period"],
     alarm_next: ["alarm_service_peek_next"],
     touch_supported: ["touch_service_is_enabled"],
-    touch_enable_navigation: ["app_touch_navigation_enable"]
+    touch_enable_navigation: ["app_touch_navigation_enable"],
+    touch_disable_bridge: ["window_set_touch_bridge_disabled"],
+    backlight_color: ["light_set_color"],
+    backlight_reset_color: ["light_set_system_color"],
+    backlight_rgb888: ["light_set_color_rgb888"]
   }
 
   @sub %{

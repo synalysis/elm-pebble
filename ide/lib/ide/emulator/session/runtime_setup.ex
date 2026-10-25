@@ -6,11 +6,16 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   alias Ide.Emulator.Types
   alias Ide.WatchModels
 
+  # Current Core Devices pebble-tool release (PyPI). Python >= 3.10.
+  @pebble_tool_spec "pebble-tool==5.0.40"
+
   @spec runtime_status(String.t() | nil) :: Types.runtime_status()
   def runtime_status(platform \\ nil) do
     platform = normalize_platform(platform)
     sdk_root = Bins.preferred_sdk_root()
-    sdk_toolchain_root = Bins.sdk_version_root(Config.config(:sdk_core_version, "4.9.169"))
+
+    sdk_toolchain_root =
+      Bins.sdk_version_root(Config.config(:sdk_core_version, SdkImages.default_sdk_version()))
 
     components = [
       component(
@@ -205,7 +210,7 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   @spec install_pebble_sdk() :: term()
 
   defp install_pebble_sdk do
-    version = Config.config(:sdk_core_version, "4.9.169")
+    version = Config.config(:sdk_core_version, SdkImages.default_sdk_version())
     sdk_root = Bins.sdk_version_root(version)
     preferred_root = Bins.preferred_sdk_root()
 
@@ -254,7 +259,7 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     opts =
       [
         image_root: image_root,
-        sdk_version: Config.config(:sdk_core_version, "4.9.169")
+        sdk_version: Config.config(:sdk_core_version, SdkImages.default_sdk_version())
       ]
       |> maybe_put_metadata_url(Config.config(:sdk_core_metadata_url, nil))
       |> maybe_put_archive_path(Config.config(:sdk_core_archive_path, nil))
@@ -275,7 +280,7 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
       pipx = System.find_executable("pipx") ->
         case pebble_tool_python_bin() do
           {:ok, python} ->
-            run_command(pipx, ["install", "--force", "--python", python, "pebble-tool"])
+            run_command(pipx, ["install", "--force", "--python", python, @pebble_tool_spec])
 
           {:error, reason} ->
             {:error, reason}
@@ -289,7 +294,14 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   @spec install_pebble_tool_with_uv(term()) :: term()
 
   defp install_pebble_tool_with_uv(uv) do
-    tool_args = ["tool", "install", "--force", "--python", pebble_tool_python(), "pebble-tool"]
+    tool_args = [
+      "tool",
+      "install",
+      "--force",
+      "--python",
+      pebble_tool_python(),
+      @pebble_tool_spec
+    ]
 
     case run_command(uv, tool_args) do
       {:ok, output} ->
@@ -425,7 +437,7 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
         opts =
           [
             image_root: image_root,
-            sdk_version: Config.config(:sdk_core_version, "4.9.169")
+            sdk_version: Config.config(:sdk_core_version, SdkImages.default_sdk_version())
           ]
           |> maybe_put_metadata_url(Config.config(:sdk_core_metadata_url, nil))
           |> maybe_put_archive_path(Config.config(:sdk_core_archive_path, nil))

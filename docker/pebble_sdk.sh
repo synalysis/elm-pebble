@@ -13,8 +13,8 @@ pebble_sdk_active_version() {
   pebble_sdk_list | awk '/\(active\)/ {print $1; exit}'
 }
 
-# Pebble lists the newest SDK last under "Available SDKs:" (for example 4.17
-# after 4.9.x). Do not use sort -V here: 4.17 would sort before 4.9.169.
+# Pebble lists the newest SDK last under "Available SDKs:" (4.33.1 follows
+# 4.17 and 4.9.x). Take that last listed version; do not re-sort.
 pebble_sdk_available_latest() {
   pebble_sdk_list | awk '
     /^Available SDKs:/ {in_available=1; next}

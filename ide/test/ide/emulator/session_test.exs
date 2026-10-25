@@ -711,7 +711,7 @@ defmodule Ide.Emulator.SessionTest do
              ]
 
       log = File.read!(log_path)
-      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool==5.0.40"
       refute log =~ "pebble sdk install"
       assert File.exists?(Path.join(root, "SDKs/current/toolchain/bin/qemu-pebble"))
     after
@@ -779,7 +779,7 @@ defmodule Ide.Emulator.SessionTest do
              ]
 
       log = File.read!(log_path)
-      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool==5.0.40"
       assert log =~ "uv python install 3.13"
       refute log =~ "pebble sdk install"
       assert File.exists?(Path.join(root, "SDKs/current/toolchain/bin/qemu-pebble"))
@@ -835,7 +835,7 @@ defmodule Ide.Emulator.SessionTest do
       assert [%{name: :pebble_tool, status: :error}] = result.results
 
       log = File.read!(log_path)
-      assert log =~ "uv tool install --force --python 3.13 pebble-tool"
+      assert log =~ "uv tool install --force --python 3.13 pebble-tool==5.0.40"
       refute log =~ "pebble sdk install"
     after
       Application.put_env(:ide, Ide.Emulator.Session, previous_config)

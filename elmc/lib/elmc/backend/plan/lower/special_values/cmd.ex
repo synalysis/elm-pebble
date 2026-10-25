@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
   alias Elmc.Backend.Plan.Lower.SpecialValues.RandomGenerateFold
   alias Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Effects
@@ -15,7 +14,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
   @impl true
   @spec special_value_from_target(String.t(), Types.special_value_args()) ::
           Types.special_value_result()
-
 
   def special_value_from_target("Pebble.Cmd.none", _args),
     do: %{op: :cmd_none}
@@ -39,13 +37,28 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_write_int), args, 2)
 
   def special_value_from_target("Pebble.Cmd.storageReadInt", [key, to_msg]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_read_int), [key, Helpers.constructor_tag_expr(to_msg)], 2)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:storage_read_int),
+        [key, Helpers.constructor_tag_expr(to_msg)],
+        2
+      )
 
   def special_value_from_target("Pebble.Storage.readInt", [key, to_msg]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_read_int), [key, Helpers.constructor_tag_expr(to_msg)], 2)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:storage_read_int),
+        [key, Helpers.constructor_tag_expr(to_msg)],
+        2
+      )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.storageReadInt", [key, to_msg]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_read_int), [key, Helpers.constructor_tag_expr(to_msg)], 2)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:storage_read_int),
+        [key, Helpers.constructor_tag_expr(to_msg)],
+        2
+      )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.listNthInt", [index, list]) do
     %{
@@ -72,11 +85,19 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
 
   def special_value_from_target("Pebble.Storage.readString", [key, to_msg]),
     do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_read_string), [key, Helpers.constructor_tag_expr(to_msg)], 2)
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:storage_read_string),
+        [key, Helpers.constructor_tag_expr(to_msg)],
+        2
+      )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.storageReadString", [key, to_msg]),
     do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:storage_read_string), [key, Helpers.constructor_tag_expr(to_msg)], 2)
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:storage_read_string),
+        [key, Helpers.constructor_tag_expr(to_msg)],
+        2
+      )
 
   def special_value_from_target("Pebble.Storage.maxSize", [to_msg]),
     do: Helpers.encoded_to_msg_cmd(:storage_read_max_size, to_msg)
@@ -91,12 +112,25 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_to_msg_cmd(:speaker_is_muted, to_msg)
 
   def special_value_from_target("Pebble.Speaker.playTone", [frequency, duration, volume, waveform]),
-    do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_play_tone), [frequency, duration, volume, waveform], 4)
+      do:
+        Helpers.encoded_cmd_expr(
+          Helpers.command_kind(:speaker_play_tone),
+          [frequency, duration, volume, waveform],
+          4
+        )
 
-  def special_value_from_target("Elm.Kernel.PebbleWatch.speakerPlayTone", [frequency, duration, volume, waveform]),
-    do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_play_tone), [frequency, duration, volume, waveform], 4)
+  def special_value_from_target("Elm.Kernel.PebbleWatch.speakerPlayTone", [
+        frequency,
+        duration,
+        volume,
+        waveform
+      ]),
+      do:
+        Helpers.encoded_cmd_expr(
+          Helpers.command_kind(:speaker_play_tone),
+          [frequency, duration, volume, waveform],
+          4
+        )
 
   def special_value_from_target("Pebble.Speaker.playNotes", [notes, volume]),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_play_notes), [volume, notes], 2)
@@ -158,13 +192,28 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: %{op: :runtime_call, function: "elmc_cmd_companion_send_value", args: [msg]}
 
   def special_value_from_target("Pebble.Light.interaction", []),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight), [%{op: :int_literal, value: 0}], 1)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:backlight),
+        [%{op: :int_literal, value: 0}],
+        1
+      )
 
   def special_value_from_target("Pebble.Light.disable", []),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight), [%{op: :int_literal, value: 1}], 1)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:backlight),
+        [%{op: :int_literal, value: 1}],
+        1
+      )
 
   def special_value_from_target("Pebble.Light.enable", []),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight), [%{op: :int_literal, value: 2}], 1)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:backlight),
+        [%{op: :int_literal, value: 2}],
+        1
+      )
 
   def special_value_from_target("Pebble.Cmd.backlight", [mode]),
     do: %{op: :runtime_call, function: "elmc_cmd_backlight_from_maybe", args: [mode]}
@@ -270,12 +319,12 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
       Helpers.encoded_cmd_expr(Helpers.command_kind(:health_set_hrv_sample_period), [seconds], 1)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod", [seconds]),
-    do:
-      Helpers.encoded_cmd_expr(
-        Helpers.command_kind(:health_set_heart_rate_sample_period),
-        [seconds],
-        1
-      )
+      do:
+        Helpers.encoded_cmd_expr(
+          Helpers.command_kind(:health_set_heart_rate_sample_period),
+          [seconds],
+          1
+        )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.alarmNext", [to_msg]),
     do: Helpers.encoded_to_msg_cmd(:alarm_next, to_msg)
@@ -285,6 +334,37 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.touchEnableNavigation", _args),
     do: Helpers.zero_arity_cmd(:touch_enable_navigation)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.touchDisableBridge", _args),
+    do: Helpers.zero_arity_cmd(:touch_disable_bridge)
+
+  def special_value_from_target("Pebble.Light.resetColor", _args),
+    do: Helpers.zero_arity_cmd(:backlight_reset_color)
+
+  def special_value_from_target("Pebble.Light.setColor", [color]) do
+    Helpers.encoded_cmd_expr(
+      Helpers.command_kind(:backlight_color),
+      [%{op: :qualified_call, target: "Pebble.Ui.Color.toInt", args: [color]}],
+      1
+    )
+  end
+
+  def special_value_from_target("Pebble.Light.setRgb", [red, green, blue]) do
+    Helpers.encoded_cmd_expr(
+      Helpers.command_kind(:backlight_rgb888),
+      [rgb888_expr(red, green, blue)],
+      1
+    )
+  end
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.backlightColor", [color]),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight_color), [color], 1)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.backlightRgb888", [rgb]),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight_rgb888), [rgb], 1)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.backlightResetColor", _args),
+    do: Helpers.zero_arity_cmd(:backlight_reset_color)
 
   def special_value_from_target("Pebble.Cmd.getClockStyle24h", [to_msg]),
     do: Helpers.encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
@@ -422,10 +502,20 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:data_log_int32), [tag, value], 2)
 
   def special_value_from_target("Pebble.Compass.current", [to_msg]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:compass_peek), [Helpers.constructor_tag_expr(to_msg)], 1)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:compass_peek),
+        [Helpers.constructor_tag_expr(to_msg)],
+        1
+      )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.compassCurrent", [to_msg]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:compass_peek), [Helpers.constructor_tag_expr(to_msg)], 1)
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:compass_peek),
+        [Helpers.constructor_tag_expr(to_msg)],
+        1
+      )
 
   def special_value_from_target("Pebble.Dictation.start", _args),
     do: Helpers.zero_arity_cmd(:dictation_start)
@@ -482,5 +572,32 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
           detail: "Random.generate generator not foldable"
         })
     end
+  end
+
+  defp rgb888_expr(red, green, blue) do
+    bitwise_or(
+      shift_left(16, channel_byte(red)),
+      bitwise_or(shift_left(8, channel_byte(green)), channel_byte(blue))
+    )
+  end
+
+  defp channel_byte(value) do
+    %{
+      op: :qualified_call,
+      target: "Basics.clamp",
+      args: [%{op: :int_literal, value: 0}, %{op: :int_literal, value: 255}, value]
+    }
+  end
+
+  defp shift_left(bits, value) do
+    %{
+      op: :qualified_call,
+      target: "Bitwise.shiftLeftBy",
+      args: [%{op: :int_literal, value: bits}, value]
+    }
+  end
+
+  defp bitwise_or(left, right) do
+    %{op: :qualified_call, target: "Bitwise.or", args: [left, right]}
   end
 end

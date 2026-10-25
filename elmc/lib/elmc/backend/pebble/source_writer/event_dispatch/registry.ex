@@ -181,6 +181,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
           {"int32_t", "total_y"},
           {"int32_t", "since_start_x"},
           {"int32_t", "since_start_y"},
+          {"int32_t", "since_prev_x"},
+          {"int32_t", "since_prev_y"},
           {"int32_t", "velocity_x"},
           {"int32_t", "velocity_y"}
         ],
@@ -192,6 +194,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
           {"totalY", "total_y"},
           {"sinceStartX", "since_start_x"},
           {"sinceStartY", "since_start_y"},
+          {"sincePrevX", "since_prev_x"},
+          {"sincePrevY", "since_prev_y"},
           {"velocityX", "velocity_x"},
           {"velocityY", "velocity_y"}
         ]

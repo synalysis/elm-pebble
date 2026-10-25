@@ -5,6 +5,7 @@ module Pebble.Touch exposing
     , Phase(..)
     , Point
     , SwipeEvent
+    , disableBridge
     , enableNavigation
     , onPan
     , onSwipe
@@ -45,7 +46,8 @@ returns `False` and gesture subscriptions do not fire.
 `enableNavigation` lets the system map taps and swipes to button events so
 existing `Pebble.Button` subscriptions keep working. Do **not** enable
 navigation on a window that also uses `onTap` / `onPan` / `onSwipe` — the
-system would consume those touches.
+system would consume those touches. Call `disableBridge` on a later screen
+when those gesture subscriptions should receive the touches again.
 
 For a runnable example, use the **watch-demo-touch** project template in the IDE.
 
@@ -56,7 +58,7 @@ is `False` and recognizers are not attached.
 @docs Point, Phase, Axis, Direction, PanEvent, SwipeEvent
 
 # Commands
-@docs supported, enableNavigation
+@docs supported, enableNavigation, disableBridge
 
 # Subscriptions
 @docs onTap, onPan, onSwipe
@@ -107,6 +109,8 @@ type alias PanEvent =
     , totalY : Int
     , sinceStartX : Int
     , sinceStartY : Int
+    , sincePrevX : Int
+    , sincePrevY : Int
     , velocityX : Int
     , velocityY : Int
     }
@@ -136,6 +140,16 @@ supported =
 enableNavigation : Cmd msg
 enableNavigation =
     Elm.Kernel.PebbleWatch.touchEnableNavigation
+
+
+{-| Stop the system from turning touches into button events.
+
+Gesture subscriptions can then receive taps, pans, and swipes on the same
+window that previously used `enableNavigation`.
+-}
+disableBridge : Cmd msg
+disableBridge =
+    Elm.Kernel.PebbleWatch.touchDisableBridge
 
 
 {-| Receive recognized taps with the tap point.

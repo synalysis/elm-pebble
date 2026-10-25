@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
   alias Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher
   alias Elmc.Backend.CCodegen.Types
@@ -13,7 +12,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
   @impl true
   @spec special_value_from_target(String.t(), Types.special_value_args()) ::
           Types.special_value_result()
-
 
   def special_value_from_target("Pebble.Events.onSecondChange", args),
     do: Helpers.subscription_special_value("Pebble.Events.onSecondChange", args)
@@ -173,7 +171,11 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
     do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.healthHrvPpiMs", [to_msg])
 
   def special_value_from_target("Pebble.Health.setHrvSamplePeriod", args),
-    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod", args)
+    do:
+      Dispatcher.special_value_from_target(
+        "Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod",
+        args
+      )
 
   def special_value_from_target("Pebble.Health.setHeartRateSamplePeriod", args),
     do:
@@ -190,6 +192,9 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
 
   def special_value_from_target("Pebble.Touch.enableNavigation", args),
     do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.touchEnableNavigation", args)
+
+  def special_value_from_target("Pebble.Touch.disableBridge", args),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.touchDisableBridge", args)
 
   def special_value_from_target("Pebble.Touch.onTap", args),
     do: Helpers.subscription_special_value("Pebble.Touch.onTap", args)
@@ -264,7 +269,8 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
     do: Helpers.subscription_special_value("Pebble.UnobstructedArea.onDidChange", args)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", args),
-    do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", args)
+    do:
+      Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedWillChange", args)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.onUnobstructedChanging", args),
     do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onUnobstructedChanging", args)
@@ -274,11 +280,19 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
 
   def special_value_from_target("Pebble.UnobstructedArea.currentBounds", [to_msg]),
     do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:unobstructed_bounds_peek), [Helpers.constructor_tag_expr(to_msg)], 1)
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:unobstructed_bounds_peek),
+        [Helpers.constructor_tag_expr(to_msg)],
+        1
+      )
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.unobstructedCurrentBounds", [to_msg]),
     do:
-      Helpers.encoded_cmd_expr(Helpers.command_kind(:unobstructed_bounds_peek), [Helpers.constructor_tag_expr(to_msg)], 1)
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:unobstructed_bounds_peek),
+        [Helpers.constructor_tag_expr(to_msg)],
+        1
+      )
 
   def special_value_from_target("Companion.Watch.onPhoneToWatch", args),
     do: Helpers.subscription_special_value("Companion.Watch.onPhoneToWatch", args)
@@ -288,7 +302,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.batch", args),
     do: Subscriptions.subscription_batch_expr(args)
-
 
   def special_value_from_target(_target, _args), do: nil
 end
