@@ -612,7 +612,7 @@
         "args": [],
         "comment": "Current or forecast weather values.",
         "name": "WeatherInfo",
-        "type": "    { temperatureC : Int\n    , condition : Condition\n    , humidityPercent : Maybe Int\n    , pressureHpa : Maybe Int\n    , windKph : Maybe Int\n    }"
+        "type": "    { temperatureC : Int\n    , condition : Condition\n    , humidityPercent : Maybe Int\n    , pressureHpa : Maybe Int\n    , windKph : Maybe Int\n    , windDirectionDeg : Maybe Int\n    }"
       }
     ],
     "binops": [],
@@ -708,87 +708,6 @@
         "comment": "Receive forecast command responses on the dedicated weather port.\n\nPair with `forecast` in `init` so command responses are routed to this handler.",
         "name": "onForecast",
         "type": "(Result String (List WeatherInfo) -> msg) -> Sub msg"
-      }
-    ]
-  },
-  {
-    "aliases": [],
-    "binops": [],
-    "comment": "WebSocket commands and events through the phone companion bridge.\n\n    init _ =\n        ( model, WebSocket.connect \"wss://example.com/live\" Connected )\n\n    subscriptions _ =\n        WebSocket.onWebSocket WebSocketChanged\n\n# Events\n\n@docs Event\n\n# Commands\n\n@docs connect, disconnect, send, setup, setupCommands\n\n# Subscriptions\n\n@docs onWebSocket, onCommands",
-    "name": "Pebble.Companion.WebSocket",
-    "unions": [
-      {
-        "args": [],
-        "cases": [
-          [
-            "Opened",
-            []
-          ],
-          [
-            "Closed",
-            [
-              "(Maybe",
-              "Int)"
-            ]
-          ],
-          [
-            "Message",
-            [
-              "String"
-            ]
-          ],
-          [
-            "Error",
-            [
-              "String"
-            ]
-          ],
-          [
-            "Unknown",
-            [
-              "String"
-            ]
-          ]
-        ],
-        "comment": "WebSocket events emitted by the companion bridge.",
-        "name": "Event"
-      }
-    ],
-    "values": [
-      {
-        "comment": "Open a WebSocket connection.",
-        "name": "connect",
-        "type": "String -> (Result String () -> msg) -> Cmd msg"
-      },
-      {
-        "comment": "Close the active WebSocket connection.",
-        "name": "disconnect",
-        "type": "(Result String () -> msg) -> Cmd msg"
-      },
-      {
-        "comment": "Send a string message over the active WebSocket.",
-        "name": "send",
-        "type": "String -> (Result String () -> msg) -> Cmd msg"
-      },
-      {
-        "comment": "Register the WebSocket event platform handler with the companion bridge.",
-        "name": "setup",
-        "type": "Cmd msg"
-      },
-      {
-        "comment": "Register the WebSocket command platform handler with the companion bridge.",
-        "name": "setupCommands",
-        "type": "Cmd msg"
-      },
-      {
-        "comment": "Receive pushed WebSocket events from the companion bridge.\n\nRegistering this subscription also tells the bridge to send WebSocket updates.",
-        "name": "onWebSocket",
-        "type": "(Event -> msg) -> Sub msg"
-      },
-      {
-        "comment": "Receive WebSocket command responses on the dedicated WebSocket port.",
-        "name": "onCommands",
-        "type": "(Result String () -> msg) -> Sub msg"
       }
     ]
   }

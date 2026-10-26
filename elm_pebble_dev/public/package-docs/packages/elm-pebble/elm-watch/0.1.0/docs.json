@@ -69,6 +69,25 @@
   {
     "aliases": [],
     "binops": [],
+    "comment": "Query the next scheduled system alarm.\n\nUse `next` to show an alarm indicator on a watchface. The callback receives\nthe UTC unix time in seconds, or `-1` when no enabled alarm is scheduled.\n\n    import Pebble.Alarm as Alarm\n\n    type Msg\n        = GotNextAlarm Int\n\n    init _ =\n        ( model, Alarm.next GotNextAlarm )\n\n    update msg model =\n        case msg of\n            GotNextAlarm utcSeconds ->\n                ( { model | nextAlarm = Alarm.toPosix utcSeconds }, Cmd.none )\n\nThis API needs firmware that implements `alarm_service_peek_next`. On older\nfirmware the callback receives `-1`.\n\nFor a runnable example, use the **watch-demo-time** or **watchface-digital**\nproject template in the IDE.\n\n# Commands\n@docs next\n\n# Helpers\n@docs toPosix",
+    "name": "Pebble.Alarm",
+    "unions": [],
+    "values": [
+      {
+        "comment": "Request the UTC unix seconds of the next enabled system alarm.\n\nThe callback receives `-1` when no enabled alarm is scheduled.",
+        "name": "next",
+        "type": "(Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Convert a `next` result to `Time.Posix`.\n\n`Nothing` when the value is negative (no alarm scheduled).",
+        "name": "toPosix",
+        "type": "Int -> Maybe Time.Posix"
+      }
+    ]
+  },
+  {
+    "aliases": [],
+    "binops": [],
     "comment": "Observe when the watch app gains or loses foreground focus.\n\nSubscribe once and update your model when the user leaves or returns to your app.\n\n    import Pebble.AppFocus as AppFocus\n\n    type Msg\n        = FocusChanged AppFocus.State\n\n    subscriptions _ =\n        AppFocus.onChange FocusChanged\n\n    update msg model =\n        case msg of\n            FocusChanged AppFocus.InFocus ->\n                ( { model | paused = False }, Cmd.none )\n\n            FocusChanged AppFocus.OutOfFocus ->\n                ( { model | paused = True }, Cmd.none )\n\nFor a runnable example, use the **watch-demo-app-focus** project template in the IDE.\n\n@docs State, onChange",
     "name": "Pebble.AppFocus",
     "native_api_links": [
@@ -596,7 +615,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, and heart rate.\n\nCheck `supported` first on older watches, then request metrics and subscribe to\nservice events for live updates.\n\n    import Pebble.Health as Health\n\n    type Msg\n        = GotSupported Bool\n        | GotSteps Int\n        | HealthEvent Health.Event\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Health.supported GotSupported\n            , Health.value Health.StepCount GotSteps\n            ]\n        )\n\n    subscriptions _ =\n        Health.onEvent HealthEvent\n\nFor a runnable example, use the **watch-demo-health** project template in the IDE.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs supported, value, sumToday, sum, accessible\n\n# Subscriptions\n@docs onEvent",
+    "comment": "Access Pebble Health data such as step count, active time, distance, sleep,\ncalories, heart rate, and heart-rate variability.\n\nCheck `supported` first on older watches, then request metrics and subscribe to\nservice events for live updates.\n\n    import Pebble.Health as Health\n\n    type Msg\n        = GotSupported Bool\n        | GotSteps Int\n        | HealthEvent Health.Event\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Health.supported GotSupported\n            , Health.value Health.StepCount GotSteps\n            ]\n        )\n\n    subscriptions _ =\n        Health.onEvent HealthEvent\n\nHeart-rate variability is collected only while an app holds an HRV sample\nperiod. Use `setHrvSamplePeriod` to start sampling and `hrvPpiMs` to read the\nlatest peak-to-peak interval. HRV requires firmware 4.32+ on watches whose\nsensor supports it.\n\nFor a runnable example, use the **watch-demo-health** project template in the IDE.\n\n# Types\n@docs Metric, Event\n\n# Commands\n@docs supported, value, sumToday, sum, accessible, hrvPpiMs, setHeartRateSamplePeriod, setHrvSamplePeriod\n\n# Subscriptions\n@docs onEvent",
     "name": "Pebble.Health",
     "native_api_links": [
       {
@@ -658,6 +677,14 @@
           [
             "SleepUpdate",
             []
+          ],
+          [
+            "HeartRateUpdate",
+            []
+          ],
+          [
+            "HrvUpdate",
+            []
           ]
         ],
         "comment": "A Pebble health service event.",
@@ -689,6 +716,21 @@
         "comment": "Request whether a metric is available between two Unix timestamps in seconds.",
         "name": "accessible",
         "type": "Metric -> Int -> Int -> (Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request the latest heart-rate variability peak-to-peak interval in milliseconds.\n\nReturns `0` when no reading is available yet, or when the watch/firmware does\nnot support HRV.",
+        "name": "hrvPpiMs",
+        "type": "(Int -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Request a heart-rate sample period in seconds.\n\nPass `0` to release the request. Heart-rate and HRV sample periods are\nindependent and share the app's sensor subscription.",
+        "name": "setHeartRateSamplePeriod",
+        "type": "Int -> Cmd msg"
+      },
+      {
+        "comment": "Request an HRV sample period in seconds.\n\nPass `0` to stop HRV collection. HRV is only sampled while a period is held.",
+        "name": "setHrvSamplePeriod",
+        "type": "Int -> Cmd msg"
       },
       {
         "comment": "Receive health service events.",
@@ -872,7 +914,7 @@
   {
     "aliases": [],
     "binops": [],
-    "comment": "Backlight controls.\n\nUse `interaction` for the default tap-to-light behavior, `enable` / `disable` to\nforce the backlight on or off, and `onChange` to observe transitions.\n\n    import Pebble.Light as Light\n\n    type Msg\n        = TurnOn\n        | LightChanged Light.State\n\n    update msg model =\n        case msg of\n            TurnOn ->\n                ( model, Light.enable )\n\n            LightChanged Light.On ->\n                ( { model | backlight = True }, Cmd.none )\n\n            LightChanged Light.Off ->\n                ( { model | backlight = False }, Cmd.none )\n\n    subscriptions _ =\n        Light.onChange LightChanged\n\nFor a runnable example, use the **watch-demo-light** project template in the IDE.\n\n@docs interaction, disable, enable, onChange, State",
+    "comment": "Backlight controls.\n\nUse `interaction` for the default tap-to-light behavior, `enable` / `disable` to\nforce the backlight on or off, and `onChange` to observe transitions.\n`setColor` and `setRgb` tint the backlight on watches with a color LED.\n`resetColor` restores the user's default color.\n\n    import Pebble.Light as Light\n\n    type Msg\n        = TurnOn\n        | LightChanged Light.State\n\n    update msg model =\n        case msg of\n            TurnOn ->\n                ( model, Light.enable )\n\n            LightChanged Light.On ->\n                ( { model | backlight = True }, Cmd.none )\n\n            LightChanged Light.Off ->\n                ( { model | backlight = False }, Cmd.none )\n\n    subscriptions _ =\n        Light.onChange LightChanged\n\nFor a runnable example, use the **watch-demo-light** project template in the IDE.\n\n@docs interaction, disable, enable, setColor, setRgb, resetColor, onChange, State",
     "name": "Pebble.Light",
     "native_api_links": [
       {
@@ -911,6 +953,21 @@
       {
         "comment": "Force backlight on.",
         "name": "enable",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Set the backlight color from a Pebble palette color.\n\nWatches without a color backlight ignore this command.",
+        "name": "setColor",
+        "type": "Color.Color -> Cmd msg"
+      },
+      {
+        "comment": "Tint the backlight with 8-bit red, green, and blue channels (0..255).\n\nThe palette used by `setColor` only has two bits per channel. `setRgb` sends\nthe full channel values. Watches without a color backlight ignore this command.",
+        "name": "setRgb",
+        "type": "Int -> Int -> Int -> Cmd msg"
+      },
+      {
+        "comment": "Restore the user's default backlight color.\n\nWatches without a color backlight ignore this command.",
+        "name": "resetColor",
         "type": "Cmd msg"
       },
       {
@@ -1487,6 +1544,126 @@
     "aliases": [
       {
         "args": [],
+        "comment": "Screen-relative pixel coordinate.",
+        "name": "Point",
+        "type": "    { x : Int\n    , y : Int\n    }"
+      },
+      {
+        "args": [],
+        "comment": "A pan (single-axis drag) update.",
+        "name": "PanEvent",
+        "type": "    { phase : Phase\n    , totalX : Int\n    , totalY : Int\n    , sinceStartX : Int\n    , sinceStartY : Int\n    , sincePrevX : Int\n    , sincePrevY : Int\n    , velocityX : Int\n    , velocityY : Int\n    }"
+      },
+      {
+        "args": [],
+        "comment": "A completed swipe.",
+        "name": "SwipeEvent",
+        "type": "    { direction : Direction\n    , velocityX : Int\n    , velocityY : Int\n    }"
+      }
+    ],
+    "binops": [],
+    "comment": "Touch gestures for Pebble watch **apps** (not watchfaces).\n\nThe Pebble SDK currently restricts touch to watchapps. Subscribe from\n`Platform.application`, not `Platform.watchface`. On watches without a\ntouchscreen, or when the user disables Touch in Settings, `supported`\nreturns `False` and gesture subscriptions do not fire.\n\n    import Pebble.Touch as Touch\n\n    type Msg\n        = TouchSupported Bool\n        | Tapped Touch.Point\n        | Panned Touch.PanEvent\n        | Swiped Touch.SwipeEvent\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ Touch.supported TouchSupported\n            , Touch.enableNavigation\n            ]\n        )\n\n    subscriptions _ =\n        Sub.batch\n            [ Touch.onTap Tapped\n            , Touch.onPan Touch.Vertical Panned\n            , Touch.onSwipe [ Touch.Left, Touch.Right ] Swiped\n            ]\n\n`enableNavigation` lets the system map taps and swipes to button events so\nexisting `Pebble.Button` subscriptions keep working. Do **not** enable\nnavigation on a window that also uses `onTap` / `onPan` / `onSwipe` — the\nsystem would consume those touches. Call `disableBridge` on a later screen\nwhen those gesture subscriptions should receive the touches again.\n\nFor a runnable example, use the **watch-demo-touch** project template in the IDE.\n\nGesture APIs require SDK/firmware 4.33+. On older firmware, `supported`\nis `False` and recognizers are not attached.\n\n# Types\n@docs Point, Phase, Axis, Direction, PanEvent, SwipeEvent\n\n# Commands\n@docs supported, enableNavigation, disableBridge\n\n# Subscriptions\n@docs onTap, onPan, onSwipe",
+    "name": "Pebble.Touch",
+    "unions": [
+      {
+        "args": [],
+        "cases": [
+          [
+            "Started",
+            []
+          ],
+          [
+            "Updated",
+            []
+          ],
+          [
+            "Completed",
+            []
+          ],
+          [
+            "Cancelled",
+            []
+          ]
+        ],
+        "comment": "Recognizer progress.",
+        "name": "Phase"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Horizontal",
+            []
+          ],
+          [
+            "Vertical",
+            []
+          ]
+        ],
+        "comment": "Axis lock for `onPan`.",
+        "name": "Axis"
+      },
+      {
+        "args": [],
+        "cases": [
+          [
+            "Up",
+            []
+          ],
+          [
+            "Down",
+            []
+          ],
+          [
+            "Left",
+            []
+          ],
+          [
+            "Right",
+            []
+          ]
+        ],
+        "comment": "Swipe direction reported by `onSwipe`.",
+        "name": "Direction"
+      }
+    ],
+    "values": [
+      {
+        "comment": "Request whether touch input is available right now.\n\nReturns `False` when the hardware has no touchscreen or the user disabled\nTouch in Settings.",
+        "name": "supported",
+        "type": "(Bool -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Opt in to system touch navigation (taps/swipes become button events).",
+        "name": "enableNavigation",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Stop the system from turning touches into button events.\n\nGesture subscriptions can then receive taps, pans, and swipes on the same\nwindow that previously used `enableNavigation`.",
+        "name": "disableBridge",
+        "type": "Cmd msg"
+      },
+      {
+        "comment": "Receive recognized taps with the tap point.",
+        "name": "onTap",
+        "type": "(Point -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive pan updates locked to `axis`.",
+        "name": "onPan",
+        "type": "Axis -> (PanEvent -> msg) -> Sub msg"
+      },
+      {
+        "comment": "Receive completed swipes.\n\nThe direction list is a filter hint for the host. The event still reports\nthe recognized `Direction`.",
+        "name": "onSwipe",
+        "type": "List Direction -> (SwipeEvent -> msg) -> Sub msg"
+      }
+    ]
+  },
+  {
+    "aliases": [
+      {
+        "args": [],
         "comment": "Nested drawing context containing style settings and commands.",
         "name": "Context",
         "type": "( List ContextSetting, List RenderOp )"
@@ -2020,7 +2197,7 @@
       }
     ],
     "binops": [],
-    "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n    import Pebble.WatchInfo as WatchInfo\n\n    type Msg\n        = GotModel WatchInfo.WatchModel\n        | GotFirmware WatchInfo.FirmwareVersion\n        | GotColor WatchInfo.WatchColor\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ WatchInfo.getModel GotModel\n            , WatchInfo.getFirmwareVersion GotFirmware\n            , WatchInfo.getColor GotColor\n            ]\n        )\n\nFor a runnable example, use the **watch-demo-watch-info** project template in the IDE.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor",
+    "comment": "Access information about the watch itself.\n\nThis API mirrors Pebble's C `WatchInfo` module and provides information such as\nwatch model, watch color, and firmware version.\n\n    import Pebble.WatchInfo as WatchInfo\n\n    type Msg\n        = GotModel WatchInfo.WatchModel\n        | GotFirmware WatchInfo.FirmwareVersion\n        | GotColor WatchInfo.WatchColor\n\n    init _ =\n        ( model\n        , Cmd.batch\n            [ WatchInfo.getModel GotModel\n            , WatchInfo.getFirmwareVersion GotFirmware\n            , WatchInfo.getColor GotColor\n            ]\n        )\n\nFor a runnable example, use the **watch-demo-watch-info** project template in the IDE.\n\n# Types\n@docs WatchModel, FirmwareVersion, WatchColor\n\n# Device info\n@docs getModel, getFirmwareVersion, getColor\n\n# Drawing\n@docs caseColor",
     "name": "Pebble.WatchInfo",
     "native_api_links": [
       {
@@ -2279,6 +2456,11 @@
         "comment": "Request the case color of the current watch.\n\nEquivalent to `watch_info_get_color()` in the C API.",
         "name": "getColor",
         "type": "(WatchColor -> msg) -> Cmd msg"
+      },
+      {
+        "comment": "Closest Pebble palette color for the watch case.\n\nUse this for letterbox fills and other chrome that should match the body, not\nthe face. Unknown and black cases map to `Color.black`.",
+        "name": "caseColor",
+        "type": "WatchColor -> Color.Color"
       }
     ]
   }
