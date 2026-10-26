@@ -1,0 +1,12 @@
+# Managed by ansible. First matching value wins, so this file is named 00-.
+TrustedUserCAKeys /etc/ssh/elm-pebble-user-ca.pub
+AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+PermitRootLogin no
+PermitEmptyPasswords no
+X11Forwarding no
+MaxAuthTries 3
+AllowUsers {{ elm_pebble_admin_user }}

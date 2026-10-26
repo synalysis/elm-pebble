@@ -1,0 +1,48 @@
+---
+- name: Configure the elm-pebble host
+  hosts: elm_pebble
+  become: "{{ ansible_user != 'root' }}"
+  vars_files:
+    - "{{ playbook_dir }}/secrets.yml"
+  pre_tasks:
+    - name: Require a real server address
+      ansible.builtin.assert:
+        that:
+          - ansible_host is defined
+          - ansible_host not in ["", "0.0.0.0", "REPLACE_WITH_SERVER_IP"]
+        fail_msg: Set ansible_host in ansible/inventory/hosts.yml.
+
+    - name: Require Debian 13
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == "Debian"
+          - ansible_facts.distribution_major_version == "13"
+        fail_msg: This playbook installs on Debian 13. This host is {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}.
+
+    - name: Require the public site settings
+      ansible.builtin.assert:
+        that:
+          - (acme_email | default('') | length > 3) or (ide_mail_from | default('') | length > 3)
+          - smtp_relay | default('') | length > 0
+          - smtp_username | default('') | length > 0
+          - smtp_password | default('') | length > 0
+          - smtp_password is not search('["#\n]')
+        fail_msg: >-
+          Fill smtp_relay, smtp_username, and smtp_password in
+          ansible/secrets.yml. The IDE boots in public_custom mode and refuses
+          to start without SMTP. Let's Encrypt uses acme_email, or ide_mail_from
+          when that is empty. The SMTP password cannot contain a double quote,
+          a hash, or a newline.
+
+    - name: Choose the public hostname
+      ansible.builtin.set_fact:
+        elm_pebble_public_host: "{{ phx_host | default(elm_pebble_domain, true) }}"
+
+  roles:
+    - access
+    - elm_pebble
+  tasks:
+    - name: Disable root SSH after the stack is installed
+      ansible.builtin.include_role:
+        name: access
+        tasks_from: lock.yml

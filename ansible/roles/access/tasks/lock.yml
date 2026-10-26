@@ -1,0 +1,67 @@
+---
+- name: Lock SSH down only after a certificate login succeeds
+  block:
+    - name: Install the hardened sshd drop-in
+      ansible.builtin.template:
+        src: sshd-elm-pebble.conf.j2
+        dest: /etc/ssh/sshd_config.d/00-elm-pebble.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validate sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Confirm the certificate can open a new session
+      ansible.builtin.command:
+        argv:
+          - ssh
+          - -o
+          - BatchMode=yes
+          - -o
+          - IdentitiesOnly=yes
+          - -o
+          - IdentityAgent=none
+          - -o
+          - PreferredAuthentications=publickey
+          - -o
+          - StrictHostKeyChecking=accept-new
+          - -i
+          - "{{ elm_pebble_deploy_private_key }}"
+          - -o
+          - "CertificateFile={{ elm_pebble_deploy_certificate }}"
+          - -p
+          - "{{ ansible_port | default(22) | string }}"
+          - "{{ elm_pebble_admin_user }}@{{ ansible_host }}"
+          - "true"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+  rescue:
+    - name: Remove the sshd drop-in after a failed certificate login
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/00-elm-pebble.conf
+        state: absent
+
+    - name: Restore the previous sshd configuration
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Stop before root login is disabled
+      ansible.builtin.fail:
+        msg: >-
+          Certificate login as {{ elm_pebble_admin_user }} failed, so root SSH
+          is still enabled. The deploy certificate is {{ elm_pebble_deploy_certificate }}.
+
+- name: Root SSH is disabled
+  ansible.builtin.debug:
+    msg: >-
+      Certificate login as {{ elm_pebble_admin_user }} works. Root SSH is off.
+      Set ansible_user to {{ elm_pebble_admin_user }} before the next run.

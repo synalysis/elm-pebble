@@ -1,0 +1,8 @@
+{
+	email {{ acme_email if acme_email | default('') | length > 3 else ide_mail_from }}
+}
+
+{{ elm_pebble_public_host }} {
+	encode gzip
+	reverse_proxy ide:4000
+}

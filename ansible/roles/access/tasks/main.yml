@@ -1,0 +1,176 @@
+---
+- name: Install sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the admin account
+  ansible.builtin.user:
+    name: "{{ elm_pebble_admin_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    create_home: true
+    password_lock: true
+    state: present
+
+- name: Allow the admin account to sudo without a password
+  ansible.builtin.template:
+    src: sudoers-deploy.j2
+    dest: "/etc/sudoers.d/{{ elm_pebble_admin_user }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Require the operator public key
+  ansible.builtin.stat:
+    path: "{{ elm_pebble_operator_pubkey }}"
+  delegate_to: localhost
+  become: false
+  register: operator_pubkey_stat
+
+- name: Fail when the operator public key is missing
+  ansible.builtin.assert:
+    that: operator_pubkey_stat.stat.exists
+    fail_msg: >-
+      {{ elm_pebble_operator_pubkey }} does not exist. Set
+      elm_pebble_operator_pubkey to the public key that should receive a
+      certificate.
+
+- name: Create the local SSH CA directory
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/keys"
+    state: directory
+    owner: "{{ lookup('env', 'USER') }}"
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Create the SSH user CA
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -f
+      - "{{ elm_pebble_ca_key }}"
+      - -N
+      - ""
+      - -C
+      - elm-pebble-user-ca
+  args:
+    creates: "{{ elm_pebble_ca_key }}"
+  delegate_to: localhost
+  become: false
+
+- name: Keep the CA private key private
+  ansible.builtin.file:
+    path: "{{ elm_pebble_ca_key }}"
+    owner: "{{ lookup('env', 'USER') }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Sign a certificate for the operator key
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -s
+      - "{{ elm_pebble_ca_key }}"
+      - -I
+      - "{{ elm_pebble_admin_user }}@{{ elm_pebble_public_host }}"
+      - -n
+      - "{{ elm_pebble_ssh_principal }}"
+      - -V
+      - "{{ elm_pebble_cert_validity }}"
+      - "{{ elm_pebble_operator_pubkey }}"
+  delegate_to: localhost
+  become: false
+  changed_when: true
+
+- name: Keep the operator certificate private enough for ssh
+  ansible.builtin.file:
+    path: "{{ elm_pebble_operator_certificate }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Create an unencrypted deploy key
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -f
+      - "{{ elm_pebble_deploy_private_key }}"
+      - -N
+      - ""
+      - -C
+      - elm-pebble-deploy
+  args:
+    creates: "{{ elm_pebble_deploy_private_key }}"
+  delegate_to: localhost
+  become: false
+
+- name: Sign a certificate for the deploy key
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -s
+      - "{{ elm_pebble_ca_key }}"
+      - -I
+      - "ansible@{{ elm_pebble_public_host }}"
+      - -n
+      - "{{ elm_pebble_ssh_principal }}"
+      - -V
+      - "{{ elm_pebble_cert_validity }}"
+      - "{{ elm_pebble_deploy_private_key }}.pub"
+  delegate_to: localhost
+  become: false
+  changed_when: true
+
+- name: Restrict the deploy key and certificate
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0600"
+  loop:
+    - "{{ elm_pebble_deploy_private_key }}"
+    - "{{ elm_pebble_deploy_private_key }}.pub"
+    - "{{ elm_pebble_deploy_certificate }}"
+  delegate_to: localhost
+  become: false
+
+- name: Read sshd drop-ins before the main config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    line: "Include /etc/ssh/sshd_config.d/*.conf"
+    insertbefore: BOF
+    state: present
+
+- name: Install the user CA public key
+  ansible.builtin.copy:
+    src: "{{ elm_pebble_ca_key }}.pub"
+    dest: /etc/ssh/elm-pebble-user-ca.pub
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the principals directory
+  ansible.builtin.file:
+    path: /etc/ssh/auth_principals
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the certificate principal for the admin account
+  ansible.builtin.template:
+    src: auth-principals.j2
+    dest: "/etc/ssh/auth_principals/{{ elm_pebble_admin_user }}"
+    owner: root
+    group: root
+    mode: "0644"
+

@@ -1,0 +1,329 @@
+---
+- name: Install host packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - docker.io
+      - docker-compose
+      - ufw
+      - unattended-upgrades
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Add swap when the host has none
+  when: ansible_facts.swaptotal_mb | default(0) | int == 0
+  block:
+    - name: Allocate a 4 GiB swap file
+      ansible.builtin.command: dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+      args:
+        creates: /swapfile
+
+    - name: Restrict the swap file
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Format the swap file
+      ansible.builtin.command: mkswap /swapfile
+      changed_when: true
+
+    - name: Enable the swap file
+      ansible.builtin.command: swapon /swapfile
+      changed_when: true
+
+    - name: Mount the swap file on boot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+        state: present
+
+- name: Start Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Let the admin account run Docker
+  ansible.builtin.user:
+    name: "{{ elm_pebble_admin_user }}"
+    groups: docker
+    append: true
+
+- name: Allow SSH before enabling the firewall
+  ansible.builtin.command: ufw allow OpenSSH
+  register: ufw_ssh
+  changed_when: "'Skipping' not in ufw_ssh.stdout"
+
+- name: Allow HTTP
+  ansible.builtin.command: ufw allow 80/tcp
+  register: ufw_http
+  changed_when: "'Skipping' not in ufw_http.stdout"
+
+- name: Allow HTTPS
+  ansible.builtin.command: ufw allow 443/tcp
+  register: ufw_https
+  changed_when: "'Skipping' not in ufw_https.stdout"
+
+- name: Deny other inbound traffic
+  ansible.builtin.command: ufw --force default deny incoming
+  changed_when: false
+
+- name: Allow outbound traffic
+  ansible.builtin.command: ufw default allow outgoing
+  changed_when: false
+
+- name: Enable the firewall
+  ansible.builtin.command: ufw --force enable
+  register: ufw_enable
+  changed_when: "'enabled' in ufw_enable.stdout | lower and 'already' not in ufw_enable.stdout | lower"
+
+- name: Create application directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ elm_pebble_compose_dir }}"
+    - "{{ elm_pebble_src_dir }}"
+    - /etc/elm-pebble
+    - /var/backups/elm-pebble
+    - /usr/local/sbin
+
+- name: Prepare service secrets
+  no_log: true
+  block:
+    - name: Check for an existing environment file
+      ansible.builtin.stat:
+        path: /etc/elm-pebble/env
+      register: elm_pebble_env_stat
+
+    - name: Read the existing environment file
+      ansible.builtin.slurp:
+        src: /etc/elm-pebble/env
+      register: elm_pebble_env_slurp
+      when: elm_pebble_env_stat.stat.exists
+
+    - name: Parse persisted secrets
+      ansible.builtin.set_fact:
+        elm_pebble_persisted: >-
+          {{
+            dict(
+              (elm_pebble_env_slurp.content | b64decode).splitlines()
+              | reject('match', '^\s*(#|$)')
+              | map('split', '=', 1)
+            )
+          }}
+      when: elm_pebble_env_stat.stat.exists
+
+    - name: Generate a database password
+      ansible.builtin.command:
+        argv: ["python3", "-c", "import secrets; print(secrets.token_hex(32))"]
+      register: generated_db_password
+      when: not elm_pebble_env_stat.stat.exists
+      changed_when: false
+
+    - name: Generate a secret key base
+      ansible.builtin.command:
+        argv: ["python3", "-c", "import secrets; print(secrets.token_urlsafe(64))"]
+      register: generated_secret_key
+      when:
+        - not elm_pebble_env_stat.stat.exists
+        - secret_key_base | default('') | length == 0
+      changed_when: false
+
+    - name: Generate an email pepper
+      ansible.builtin.command:
+        argv: ["python3", "-c", "import secrets; print(secrets.token_hex(32))"]
+      register: generated_email_pepper
+      when:
+        - not elm_pebble_env_stat.stat.exists
+        - ide_email_hash_pepper | default('') | length == 0
+      changed_when: false
+
+    - name: Reuse the database password from the server
+      ansible.builtin.set_fact:
+        elm_pebble_postgres_password: "{{ elm_pebble_persisted.POSTGRES_PASSWORD }}"
+      when: elm_pebble_env_stat.stat.exists
+
+    - name: Use a new database password
+      ansible.builtin.set_fact:
+        elm_pebble_postgres_password: "{{ generated_db_password.stdout | trim }}"
+      when: not elm_pebble_env_stat.stat.exists
+
+    - name: Keep the previous signing key
+      ansible.builtin.set_fact:
+        elm_pebble_secret_key_base: "{{ secret_key_base | trim }}"
+      when: secret_key_base | default('') | length > 0
+
+    - name: Reuse the signing key stored on the server
+      ansible.builtin.set_fact:
+        elm_pebble_secret_key_base: "{{ elm_pebble_persisted.SECRET_KEY_BASE }}"
+      when:
+        - secret_key_base | default('') | length == 0
+        - elm_pebble_env_stat.stat.exists
+
+    - name: Use a generated signing key
+      ansible.builtin.set_fact:
+        elm_pebble_secret_key_base: "{{ generated_secret_key.stdout | trim }}"
+      when:
+        - secret_key_base | default('') | length == 0
+        - not elm_pebble_env_stat.stat.exists
+
+    - name: Keep the previous email pepper
+      ansible.builtin.set_fact:
+        elm_pebble_email_pepper: "{{ ide_email_hash_pepper | trim }}"
+      when: ide_email_hash_pepper | default('') | length > 0
+
+    - name: Reuse the email pepper stored on the server
+      ansible.builtin.set_fact:
+        elm_pebble_email_pepper: "{{ elm_pebble_persisted.IDE_EMAIL_HASH_PEPPER }}"
+      when:
+        - ide_email_hash_pepper | default('') | length == 0
+        - elm_pebble_env_stat.stat.exists
+
+    - name: Use a generated email pepper
+      ansible.builtin.set_fact:
+        elm_pebble_email_pepper: "{{ generated_email_pepper.stdout | trim }}"
+      when:
+        - ide_email_hash_pepper | default('') | length == 0
+        - not elm_pebble_env_stat.stat.exists
+
+- name: Install the service environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/elm-pebble/env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Replace the previous source tree
+  ansible.builtin.file:
+    path: "{{ elm_pebble_src_dir }}"
+    state: absent
+
+- name: Recreate the source directory
+  ansible.builtin.file:
+    path: "{{ elm_pebble_src_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Archive the committed source tree
+  ansible.builtin.command:
+    argv:
+      - git
+      - archive
+      - --format=tar
+      - --output
+      - "{{ elm_pebble_archive }}"
+      - HEAD
+  args:
+    chdir: "{{ playbook_dir }}/.."
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  vars:
+    elm_pebble_archive: "/tmp/elm-pebble-{{ inventory_hostname }}.tar"
+
+- name: Upload the source tree
+  ansible.builtin.unarchive:
+    src: "/tmp/elm-pebble-{{ inventory_hostname }}.tar"
+    dest: "{{ elm_pebble_src_dir }}"
+    owner: root
+    group: root
+
+- name: Remove the local source archive
+  ansible.builtin.file:
+    path: "/tmp/elm-pebble-{{ inventory_hostname }}.tar"
+    state: absent
+  delegate_to: localhost
+  become: false
+
+- name: Install the Compose project
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ elm_pebble_compose_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Caddy site
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ elm_pebble_compose_dir }}/Caddyfile"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Build and start the IDE and database
+  ansible.builtin.command: docker-compose -f compose.yml up -d --build --remove-orphans
+  args:
+    chdir: "{{ elm_pebble_compose_dir }}"
+  timeout: 3600
+  register: compose_up
+  changed_when: true
+
+- name: Wait until Postgres is healthy
+  ansible.builtin.command: docker inspect -f "{{ '{{.State.Health.Status}}' }}" elm-pebble-postgres
+  register: postgres_health
+  retries: 30
+  delay: 5
+  until: postgres_health.stdout == "healthy"
+  changed_when: false
+
+- name: Wait until the IDE container stays up
+  ansible.builtin.command: docker inspect -f "{{ '{{.State.Status}} {{.RestartCount}}' }}" elm-pebble-ide
+  register: ide_state
+  retries: 36
+  delay: 10
+  until: ide_state.stdout == "running 0"
+  changed_when: false
+
+- name: Install the database backup script
+  ansible.builtin.template:
+    src: backup.sh.j2
+    dest: /usr/local/sbin/elm-pebble-backup
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the backup service
+  ansible.builtin.template:
+    src: backup.service.j2
+    dest: /etc/systemd/system/elm-pebble-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the backup timer
+  ansible.builtin.template:
+    src: backup.timer.j2
+    dest: /etc/systemd/system/elm-pebble-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable the daily database backup
+  ansible.builtin.systemd:
+    name: elm-pebble-backup.timer
+    daemon_reload: true
+    enabled: true
+    state: started

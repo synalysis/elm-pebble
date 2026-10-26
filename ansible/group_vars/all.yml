@@ -1,0 +1,16 @@
+elm_pebble_domain: ide.elm-pebble.dev
+elm_pebble_admin_user: deploy
+elm_pebble_ssh_principal: deploy
+elm_pebble_operator_pubkey: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
+elm_pebble_operator_private_key: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+elm_pebble_operator_certificate: "{{ elm_pebble_operator_pubkey | regex_replace('\\.pub$', '-cert.pub') }}"
+elm_pebble_ca_key: "{{ playbook_dir }}/keys/user_ca"
+elm_pebble_deploy_private_key: "{{ playbook_dir }}/keys/deploy"
+elm_pebble_deploy_certificate: "{{ playbook_dir }}/keys/deploy-cert.pub"
+elm_pebble_cert_validity: "+52w"
+
+postgres_user: ide
+postgres_db: ide_prod
+ide_auth_mode: public_custom
+elm_pebble_src_dir: /opt/elm-pebble/src
+elm_pebble_compose_dir: /opt/elm-pebble

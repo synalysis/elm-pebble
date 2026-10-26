@@ -1,0 +1,19 @@
+# Copy to hosts.yml (gitignored) and set the address of the Debian 13 server.
+# The first run logs in as root with the provider password. Run:
+#   ansible-playbook site.yml --ask-pass
+# Do not put the password in this file. After it succeeds, set
+# ansible_user to deploy, ansible_ssh_private_key_file to keys/deploy,
+# and ansible_ssh_common_args to IdentitiesOnly, IdentityAgent=none,
+# and CertificateFile=keys/deploy-cert.pub.
+elm_pebble:
+  hosts:
+    ide:
+      ansible_host: REPLACE_WITH_SERVER_IP
+      ansible_user: root
+      ansible_port: 22
+      ansible_ssh_common_args: >-
+        -o IdentitiesOnly=yes
+        -o IdentityAgent=none
+        -o PreferredAuthentications=password
+        -o PubkeyAuthentication=no
+        -o StrictHostKeyChecking=accept-new

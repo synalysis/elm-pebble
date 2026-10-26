@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: elm-pebble-postgres
+    env_file:
+      - /etc/elm-pebble/env
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ postgres_user }} -d {{ postgres_db }}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ide-data-init:
+    image: elm-pebble-ide:local
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    user: "0:0"
+    volumes:
+      - ide_data:/var/lib/ide
+    entrypoint: ["chown", "-R", "nobody:nogroup", "/var/lib/ide"]
+    restart: "no"
+
+  ide:
+    image: elm-pebble-ide:local
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: elm-pebble-ide
+    env_file:
+      - /etc/elm-pebble/env
+    volumes:
+      - ide_data:/var/lib/ide
+    depends_on:
+      ide-data-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: elm-pebble-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ide
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ide_data:
+  caddy_data:
+  caddy_config:

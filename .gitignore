@@ -78,3 +78,8 @@ tools/wasm-opt.*
 # Python
 **/__pycache__/
 *.py[cod]
+
+# Ansible inventory, operator secrets, and the SSH user CA private key
+ansible/inventory/hosts.yml
+ansible/secrets.yml
+ansible/keys/
