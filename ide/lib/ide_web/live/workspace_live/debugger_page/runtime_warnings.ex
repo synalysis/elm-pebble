@@ -34,12 +34,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
 
   defp raw_runtime_model(_), do: %{}
 
+  defp handheld_model?(model) when is_map(model) do
+    id = Map.get(model, "watch_profile_id") || Map.get(model, :watch_profile_id)
+    Ide.Handheld.Models.known?(id)
+  end
+
   @spec elmx_compile_warning(DebuggerTypes.app_model()) :: String.t() | nil
   defp elmx_compile_warning(model) when is_map(model) do
     case Map.get(model, "elmx_compile_error_message") ||
            Map.get(model, :elmx_compile_error_message) do
       message when is_binary(message) and message != "" ->
-        "elmx compile failed: #{message}\n\nRecompile the watch (and phone, if used) from the Build tab, then reload the debugger."
+        followup =
+          if handheld_model?(model) do
+            "Recompile the app from the Build tab, then reload the debugger."
+          else
+            "Recompile the watch (and phone, if used) from the Build tab, then reload the debugger."
+          end
+
+        "elmx compile failed: #{message}\n\n#{followup}"
 
       _ ->
         nil
@@ -86,10 +98,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.RuntimeWarnings do
         nil
 
       fields ->
-        """
-        Some watch `runtime_model` fields still contain parser/introspect artifacts (`$var`, `call`, `$opaque`) instead of evaluated Elm values: #{Enum.join(fields, ", ")}.
+        subject = if handheld_model?(model), do: "device", else: "watch"
 
-        Typical causes: elmx artifacts were missing on reload, or `Main.init` did not evaluate via the executor. Recompile, reload the debugger, and check `runtime_execution_error` / `operation_source` on the watch model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
+        """
+        Some #{subject} `runtime_model` fields still contain parser/introspect artifacts (`$var`, `call`, `$opaque`) instead of evaluated Elm values: #{Enum.join(fields, ", ")}.
+
+        Typical causes: elmx artifacts were missing on reload, or `Main.init` did not evaluate via the executor. Recompile, reload the debugger, and check `runtime_execution_error` / `operation_source` on the #{subject} model. Preview needs a fully evaluated model (see `previewUnavailable` when view eval fails).
         """
         |> String.trim()
     end

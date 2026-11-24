@@ -59,6 +59,11 @@ defmodule Ide.InternalPackages do
   @spec elm_json_elm_src_abs() :: String.t()
   def elm_json_elm_src_abs, do: Paths.priv_path("internal_packages/elm-json/src")
 
+  @doc false
+  @spec handheld_elm_src_abs() :: String.t()
+  def handheld_elm_src_abs,
+    do: Paths.bundled_elm_path("handheld-src", "packages/elm-handheld/handheld/src")
+
   @doc """
   Absolute paths for extra `source-directories` on watch apps (after `"src"`).
   """

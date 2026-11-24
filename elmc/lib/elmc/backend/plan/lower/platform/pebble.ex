@@ -323,7 +323,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   end
 
   @spec cmd_builtin(Types.ir_expr() | term(), non_neg_integer()) ::
-          :cmd0 | :cmd1 | :cmd1_string | :cmd2 | :cmd3 | :cmd4
+          :cmd0 | :cmd1 | :cmd1_string | :cmd2 | :cmd3 | :cmd4 | :cmd5
 
   defp cmd_builtin(kind, 2) do
     if storage_write_string_kind?(kind) do
@@ -335,14 +335,15 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   defp cmd_builtin(_kind, arity), do: cmd_builtin_arity(arity)
 
-  @spec cmd_builtin_arity(non_neg_integer()) :: :cmd0 | :cmd1 | :cmd2 | :cmd3 | :cmd4
+  @spec cmd_builtin_arity(non_neg_integer()) :: :cmd0 | :cmd1 | :cmd2 | :cmd3 | :cmd4 | :cmd5
 
   defp cmd_builtin_arity(0), do: :cmd0
   defp cmd_builtin_arity(1), do: :cmd1
   defp cmd_builtin_arity(2), do: :cmd2
   defp cmd_builtin_arity(3), do: :cmd3
   defp cmd_builtin_arity(4), do: :cmd4
-  defp cmd_builtin_arity(_), do: :cmd4
+  defp cmd_builtin_arity(5), do: :cmd5
+  defp cmd_builtin_arity(_), do: :cmd5
 
   # Persist string cmds carry a boxed Elm string, not a second native int.
   # Lowering them as cmd2 + elmc_as_int(text) stores an empty persist value.

@@ -5,6 +5,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
 
   alias Elmx.Runtime.Pebble.KernelTargets
   alias Elmx.Runtime.Pebble.SpecialValues.Companion
+  alias Elmx.Runtime.Pebble.SpecialValues.Handheld
   alias Elmx.Runtime.Pebble.SpecialValues.Http
   alias Elmx.Runtime.Pebble.SpecialValues.Json
   alias Elmx.Runtime.Pebble.SpecialValues.Platform
@@ -13,7 +14,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
   alias Elmx.Runtime.Pebble.SpecialValues.Websocket
   alias Elmx.Types
 
-  @dispatchers [Json, Ui, Companion, Http, Platform, Watch, Websocket]
+  @dispatchers [Json, Ui, Handheld, Companion, Http, Platform, Watch, Websocket]
 
   @doc """
   Rewrites qualified-call IR to runtime-call nodes (mirrors `elmc` `special_value_from_target/2`).

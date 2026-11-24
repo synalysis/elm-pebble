@@ -44,6 +44,18 @@ defmodule Elmc.HostPlanTest do
     assert :ok = HostVerify.verify(plan)
   end
 
+  test "handheld builds keep a command snapshot" do
+    plan =
+      lower_simple!(
+        pebble_int32: true,
+        prod: true,
+        codegen_profile: :size,
+        target: "flipper-zero"
+      )
+
+    assert plan.last_dispatch_cmd_cap == 8
+  end
+
   test "verify rejects incomplete present entry call" do
     plan = lower_simple!()
     bad = %{plan | init: %{present?: true, call: %{fun: "init"}}}

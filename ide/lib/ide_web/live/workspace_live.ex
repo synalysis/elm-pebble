@@ -397,7 +397,7 @@ defmodule IdeWeb.WorkspaceLive do
           <div class="min-w-0">
             <h1 class="truncate text-lg font-semibold">{@project.name}</h1>
             <p class="truncate text-sm text-zinc-600">
-              Target: {@project.target_type} · Slug: {@project.slug}
+              Target: {workspace_target_label(@project)} · Slug: {@project.slug}
             </p>
           </div>
         </div>
@@ -411,7 +411,11 @@ defmodule IdeWeb.WorkspaceLive do
           <.link patch={~p"/projects/#{@project.slug}/build"} class={pane_class(@pane, :build)}>
             Build
           </.link>
-          <.link patch={~p"/projects/#{@project.slug}/emulator"} class={pane_class(@pane, :emulator)}>
+          <.link
+            :if={Ide.DeviceFamily.emulator_page?(@project)}
+            patch={~p"/projects/#{@project.slug}/emulator"}
+            class={pane_class(@pane, :emulator)}
+          >
             Emulator
           </.link>
           <.link href={~p"/projects/#{@project.slug}/publish"} class={pane_class(@pane, :publish)}>
@@ -439,9 +443,35 @@ defmodule IdeWeb.WorkspaceLive do
       <%= if @pane == :settings or @pane == :settings_store or @pane == :settings_github,
         do: ProjectSettingsPage.render(assigns) %>
       <%= if @pane == :debugger, do: DebuggerPage.render(assigns) %>
-      <%= if @pane == :emulator, do: EmulatorPage.render(assigns) %>
+      <%= if @pane == :emulator and Ide.DeviceFamily.emulator_page?(@project),
+        do: EmulatorPage.render(assigns) %>
+      <section
+        :if={@pane == :emulator and not Ide.DeviceFamily.emulator_page?(@project)}
+        class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+      >
+        <h2 class="text-base font-semibold">No emulator for this device</h2>
+        <p class="mt-2 text-sm text-zinc-600">
+          {@project.name} targets a device without an in-IDE emulator. Use Build to pack it for that device.
+        </p>
+      </section>
     </div>
     """
+  end
+
+  defp workspace_target_label(project) do
+    if Ide.DeviceFamily.handheld?(project) do
+      settings = project.debugger_settings || %{}
+
+      id =
+        Ide.DeviceFamily.normalize_id(
+          project,
+          Map.get(settings, "emulator_target") || Map.get(settings, "watch_profile_id")
+        )
+
+      Ide.Handheld.Models.profile(id)["name"]
+    else
+      project.target_type
+    end
   end
 
   @spec pane_class(pane(), pane()) :: String.t()

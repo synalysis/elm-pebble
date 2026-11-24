@@ -35,6 +35,39 @@ defmodule IdeWeb.WorkspaceLive.PublishPageTest do
     {Plug.Test.init_test_session(conn, user_id: user.id), user}
   end
 
+  test "handheld publish page installs on the connected Flipper Zero", %{conn: conn} do
+    Application.put_env(:ide, Ide.Auth, mode: :local)
+    previous = System.get_env("IDE_DEVICE_FAMILY")
+    System.delete_env("IDE_DEVICE_FAMILY")
+
+    on_exit(fn ->
+      if is_binary(previous),
+        do: System.put_env("IDE_DEVICE_FAMILY", previous),
+        else: System.delete_env("IDE_DEVICE_FAMILY")
+    end)
+
+    project =
+      create_project!(%{
+        "name" => "PublishFlipper",
+        "slug" => "publish-flipper",
+        "target_type" => "app",
+        "release_defaults" => %{
+          "device_family" => "handheld",
+          "target_platforms" => ["meowkit", "flipper-zero"]
+        }
+      })
+
+    assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/publish")
+
+    assert html =~ "Install on Flipper"
+    assert html =~ "Leave USB Mass Storage turned off"
+    assert html =~ "Install on MeowKit"
+    assert has_element?(view, "button", "Install on Flipper")
+    assert has_element?(view, "button", "Install on MeowKit")
+    refute html =~ "Submit to App Store"
+    refute html =~ "Download"
+  end
+
   test "publish page shows download PBW in local mode", %{conn: conn} do
     Application.put_env(:ide, Ide.Auth, mode: :local)
 

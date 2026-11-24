@@ -9,6 +9,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   import Phoenix.LiveView,
     only: [consume_uploaded_entries: 3, put_flash: 3, push_event: 3, start_async: 3]
 
+  alias Ide.DeviceFamily
   alias Ide.AppStore.Listing, as: AppStoreListing
   alias Ide.Auth
   alias Ide.Auth.FirebaseTokenStore
@@ -17,6 +18,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   alias Ide.GitHub.Repositories, as: GitHubRepositories
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias IdeWeb.WorkspaceLive.EmulatorFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.State
   alias IdeWeb.WorkspaceLive.Types
@@ -80,6 +82,23 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
 
   def handle_event("firebase-auth-refresh-failed", %{"error" => error}, socket) do
     {:noreply, fail_firebase_auth_refresh(socket, to_string(error))}
+  end
+
+  def handle_event("validate-project-settings", %{"project_settings" => params}, socket) do
+    family = Ide.DeviceFamily.normalize_family(params["device_family"])
+    current = socket.assigns.project_settings_form.params["device_family"] || "pebble"
+
+    if family == current do
+      {:noreply, socket}
+    else
+      data =
+        socket.assigns.project_settings_form.params
+        |> Map.merge(params)
+        |> Map.put("device_family", family)
+        |> Map.put("target_platforms", Ide.DeviceFamily.default_platforms(family))
+
+      {:noreply, assign(socket, :project_settings_form, to_form(data, as: :project_settings))}
+    end
   end
 
   def handle_event("validate-project-settings", _params, socket) do
@@ -274,9 +293,31 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
         readiness = PublishFlow.publish_readiness(updated, socket.assigns.screenshots)
         warnings = PublishFlow.publish_warnings(updated, readiness, release_summary)
 
+        updated = sync_emulator_target(socket, updated)
+        selected = DeviceFamily.normalize_id(updated, socket.assigns.selected_emulator_target)
+
+        emulator_mode =
+          if DeviceFamily.handheld?(updated), do: "embedded", else: socket.assigns.emulator_mode
+
         socket =
           socket
           |> assign(:project, updated)
+          |> assign(:device_family, DeviceFamily.family(updated))
+          |> assign(:emulator_targets, DeviceFamily.emulator_target_ids(updated))
+          |> assign(:selected_emulator_target, selected)
+          |> assign(:emulator_mode, emulator_mode)
+          |> assign(
+            :emulator_form,
+            to_form(
+              %{
+                "target" => selected,
+                "mode" => emulator_mode,
+                "production_build" =>
+                  to_string(EmulatorFlow.project_emulator_production_build(updated))
+              },
+              as: :emulator
+            )
+          )
           |> assign(
             :detected_capabilities,
             Ide.ProjectCapabilities.package_capabilities(workspace_root)
@@ -329,10 +370,17 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
       String.trim(params["source_url"] || Map.get(defaults, "source_url", ""))
     )
     |> Map.put("tags", String.trim(params["tags"] || Map.get(defaults, "tags", "")))
-    |> Map.put(
-      "target_platforms",
-      target_platforms_param(params, Map.get(defaults, "target_platforms"))
-    )
+    |> then(fn merged ->
+      family =
+        DeviceFamily.normalize_family(params["device_family"] || Map.get(defaults, "device_family"))
+
+      merged
+      |> Map.put("device_family", family)
+      |> Map.put(
+        "target_platforms",
+        target_platforms_param(params, Map.get(defaults, "target_platforms"), family)
+      )
+    end)
     |> Map.put("optimize_for_size", to_bool(Map.get(params, "optimize_for_size")))
     |> Map.put("capabilities", Ide.ProjectCapabilities.package_capabilities(workspace_root))
   end
@@ -363,10 +411,26 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
 
   defp merge_github_config(github, _params, _), do: github
 
-  defp target_platforms_param(%{"target_platforms" => platforms}, _defaults),
-    do: State.target_platforms_form_value(platforms)
+  defp target_platforms_param(%{"target_platforms" => platforms}, _defaults, family),
+    do: State.target_platforms_form_value(platforms, family)
 
-  defp target_platforms_param(_params, defaults), do: State.target_platforms_form_value(defaults)
+  defp target_platforms_param(_params, defaults, family),
+    do: State.target_platforms_form_value(defaults, family)
+
+  defp sync_emulator_target(socket, %Project{} = project) do
+    selected = DeviceFamily.normalize_id(project, socket.assigns.selected_emulator_target)
+
+    if selected == socket.assigns.selected_emulator_target do
+      project
+    else
+      EmulatorFlow.persist_project_emulator_selection(
+        project,
+        selected,
+        "embedded",
+        EmulatorFlow.project_emulator_production_build(project)
+      )
+    end
+  end
 
   defp visibility_param(%{"github_visibility" => visibility}, _defaults),
     do: Projects.github_visibility(visibility)

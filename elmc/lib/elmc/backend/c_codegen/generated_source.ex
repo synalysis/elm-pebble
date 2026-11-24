@@ -609,10 +609,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         ir
       )
 
+    pebble_header =
+      if Elmc.Backend.Handheld.target?(opts), do: "", else: "#include \"elmc_pebble.h\"\n"
+
     """
     #include "elmc_generated.h"
-    #include "elmc_pebble.h"
-    #include <stdbool.h>
+    #{pebble_header}    #include <stdbool.h>
     #include <stdio.h>
     #include <stdlib.h>
 

@@ -17,7 +17,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   alias Ide.Screenshots
   alias IdeWeb.WorkspaceLive.BuildFlow
   alias IdeWeb.WorkspaceLive.DebuggerBridge
-  alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
@@ -40,6 +39,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     delete-screenshot
     delete-screenshot-target
     set-emulator-target
+    pack-handheld
     emulator-elmc-rc-fail
   )
 
@@ -302,9 +302,39 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
     end
   end
 
+  def handle_event("pack-handheld", _params, socket) do
+    project = socket.assigns.project
+    target = Ide.DeviceFamily.normalize_id(project, socket.assigns.selected_emulator_target)
+    dest = Path.join(Projects.project_workspace_path(project), "dist/handheld")
+
+    case Ide.Handheld.Pack.pack(Ide.Handheld.Models.pack_target(target), dest,
+           id: project.slug,
+           name: project.name || project.slug,
+           profile: target
+         ) do
+      {:ok, path} ->
+        {:noreply,
+         socket
+         |> assign(:handheld_pack_status, :ok)
+         |> assign(:handheld_pack_output, "Packed #{target} to #{path}")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:handheld_pack_status, :error)
+         |> assign(:handheld_pack_output, "Pack failed: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("set-emulator-target", %{"emulator" => params}, socket) do
-    target = normalize_emulator_target(Map.get(params, "target"))
-    mode = normalize_emulator_mode(target, Map.get(params, "mode"))
+    target = Ide.DeviceFamily.normalize_id(socket.assigns.project, Map.get(params, "target"))
+
+    mode =
+      if Ide.DeviceFamily.handheld?(socket.assigns.project) do
+        "embedded"
+      else
+        normalize_emulator_mode(target, Map.get(params, "mode"))
+      end
     production_build? =
       if Map.has_key?(params, "production_build") do
         emulator_production_build_from_params(params)
@@ -333,7 +363,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
           as: :emulator
         )
       )
-      |> check_emulator_installation()
+      |> then(fn socket ->
+        if Ide.DeviceFamily.handheld?(socket.assigns.project) do
+          socket
+        else
+          check_emulator_installation(socket)
+        end
+      end)
 
     socket =
       case Ide.Debugger.set_watch_profile(Projects.scope_key(project), %{
@@ -629,18 +665,21 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   def persist_project_emulator_selection(project, target, mode, production_build? \\ nil)
 
   def persist_project_emulator_selection(%Project{} = project, target, mode, production_build?) do
-    selected_target = normalize_emulator_target(target)
-    selected_mode = normalize_emulator_mode(selected_target, mode)
+    selected_target = Ide.DeviceFamily.normalize_id(project, target)
+
+    selected_mode =
+      if Ide.DeviceFamily.handheld?(project) do
+        "embedded"
+      else
+        normalize_emulator_mode(selected_target, mode)
+      end
     settings = project.debugger_settings || %{}
 
     updated_settings =
       settings
       |> Map.put("emulator_target", selected_target)
       |> Map.put("emulator_mode", selected_mode)
-      |> Map.put(
-        "watch_profile_id",
-        DebuggerFlow.normalize_debugger_watch_profile_id(selected_target)
-      )
+      |> Map.put("watch_profile_id", Ide.DeviceFamily.normalize_id(project, selected_target))
       |> maybe_put_emulator_production_build(production_build?)
 
     case Projects.update_project(project, %{"debugger_settings" => updated_settings}) do
@@ -674,7 +713,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   @spec project_emulator_target(Project.t()) :: String.t()
   def project_emulator_target(%Project{} = project) do
     settings = project.debugger_settings || %{}
-    normalize_emulator_target(Map.get(settings, "emulator_target"))
+    Ide.DeviceFamily.normalize_id(project, Map.get(settings, "emulator_target"))
   end
 
   @spec project_emulator_mode(Project.t()) :: String.t()

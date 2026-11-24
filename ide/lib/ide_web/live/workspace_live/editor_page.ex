@@ -53,6 +53,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
   attr(:editor_docs_panel_open, :boolean, required: true)
   attr(:editor_docs_col_px, :integer, required: true)
   attr(:companion_app_present, :boolean, required: true)
+  attr(:device_family, :string, default: "pebble")
   attr(:project, :map, required: true)
   attr(:rename_file_modal_open, :boolean, required: true)
   attr(:rename_form, :any, required: true)
@@ -110,11 +111,15 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
         <aside class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div class="min-h-0 flex-1 overflow-auto p-3">
             <h2 class="text-sm font-semibold">Files</h2>
-            <p class="mt-1 text-[11px] text-zinc-500">Elm module files for each source root.</p>
+            <p class="mt-1 text-[11px] text-zinc-500">
+              {if @device_family == "handheld",
+                do: "One Elm program. There is no companion app and no protocol interface.",
+                else: "Elm module files for each source root."}
+            </p>
             <div class="mt-3 space-y-3">
-              <div :for={root <- editor_files_tree(@tree)}>
+              <div :for={root <- editor_files_tree(@tree, @device_family)}>
                 <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  {root.source_root}
+                  {editor_root_label(root.source_root)}
                 </h3>
                 <.tree_nodes
                   nodes={root.nodes}
@@ -138,7 +143,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
                 Create file…
               </button>
               <button
-                :if={!@companion_app_present}
+                :if={@device_family != "handheld" and not @companion_app_present}
                 type="button"
                 phx-click="add-companion-app"
                 class="rounded bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
@@ -903,9 +908,13 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
     end
   end
 
-  @spec editor_files_tree([source_root_tree()]) :: [source_root_tree()]
-  defp editor_files_tree(tree) when is_list(tree) do
-    Enum.map(tree, fn %{source_root: source_root, nodes: nodes} ->
+  @spec editor_files_tree([source_root_tree()], String.t()) :: [source_root_tree()]
+  defp editor_files_tree(tree, family) when is_list(tree) do
+    tree
+    |> Enum.reject(fn %{source_root: source_root} ->
+      family == "handheld" and source_root in ["protocol", "phone"]
+    end)
+    |> Enum.map(fn %{source_root: source_root, nodes: nodes} ->
       src_children =
         case Enum.find(nodes, &(&1.type == :dir and &1.name == "src")) do
           %{children: children} when is_list(children) -> children
@@ -931,6 +940,9 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
       other -> [other]
     end)
   end
+
+  defp editor_root_label("app"), do: "App"
+  defp editor_root_label(source_root), do: source_root
 
   @spec editor_source_display_path(String.t()) :: String.t()
   defp editor_source_display_path("src/" <> rest), do: rest

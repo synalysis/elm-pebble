@@ -386,19 +386,28 @@ defmodule Elmc do
          {:ok, {opts, generated_c}} <-
            maybe_recompile_stream_view_fallback(ir, out_dir, entry_module, opts, generated_c),
          :ok <-
-           Pebble.write_pebble_shim(
-             ir,
-             out_dir,
-             entry_module,
-             Map.put(opts, :generated_c, generated_c)
-           ),
+           write_platform_shim(ir, out_dir, entry_module, opts, generated_c),
          :ok <-
            Generator.write_runtime(
              opts[:runtime_dir] || Path.join(opts[:out_dir] || "build", "runtime"),
              prune_from_dir: if(opts[:prune_runtime], do: opts[:out_dir] || "build", else: nil),
-             pebble_int32: opts[:pebble_int32] || false
+             pebble_int32: opts[:pebble_int32] || false,
+             handheld: Elmc.Backend.Handheld.target?(opts)
            ) do
       :ok
+    end
+  end
+
+  defp write_platform_shim(ir, out_dir, entry_module, opts, generated_c) do
+    if Elmc.Backend.Handheld.target?(opts) do
+      Elmc.Backend.Handheld.Artifacts.write(out_dir, opts)
+    else
+      Pebble.write_pebble_shim(
+        ir,
+        out_dir,
+        entry_module,
+        Map.put(opts, :generated_c, generated_c)
+      )
     end
   end
 

@@ -118,7 +118,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         Release
       </.link>
       <.link
-        :if={Auth.app_store_publish_enabled?()}
+        :if={Auth.app_store_publish_enabled?() and not Ide.DeviceFamily.handheld?(@project)}
         patch={~p"/projects/#{@project.slug}/settings/store"}
         class={settings_tab_class(@pane, :settings_store)}
       >
@@ -203,9 +203,16 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           <textarea
             name={@project_settings_form["description"].name}
             class="min-h-24 w-full rounded border border-zinc-300 px-2 py-1.5"
-            placeholder="A short description shown on the Pebble App Store."
+            placeholder={
+              if @project_settings_form["device_family"].value == "handheld",
+                do: "A short description of this handheld app.",
+                else: "A short description shown on the Pebble App Store."
+            }
           ><%= @project_settings_form["description"].value %></textarea>
-          <span class="mt-1 block text-zinc-500">
+          <span
+            :if={@project_settings_form["device_family"].value != "handheld"}
+            class="mt-1 block text-zinc-500"
+          >
             Required by `pebble publish --non-interactive` when creating a new App Store listing.
           </span>
         </label>
@@ -245,14 +252,43 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             placeholder="fitness, minimal, utility"
           />
         </label>
+        <label class="text-xs md:col-span-2">
+          <span class="mb-1 block font-medium text-zinc-700">Device family</span>
+          <select
+            name="project_settings[device_family]"
+            class="w-full max-w-md rounded border border-zinc-300 px-2 py-1.5"
+          >
+            <option
+              value="pebble"
+              selected={@project_settings_form["device_family"].value != "handheld"}
+            >
+              Pebble watches
+            </option>
+            <option
+              value="handheld"
+              selected={@project_settings_form["device_family"].value == "handheld"}
+            >
+              Handheld devices
+            </option>
+          </select>
+          <span class="mt-1 block text-zinc-500">
+            Chooses which device list and pages this project shows. The compiler follows the device you select, not this switch.
+          </span>
+        </label>
         <fieldset class="text-xs md:col-span-2">
-          <legend class="mb-1 block font-medium text-zinc-700">Target platforms</legend>
+          <legend class="mb-1 block font-medium text-zinc-700">
+            {if @project_settings_form["device_family"].value == "handheld",
+              do: "Handheld types",
+              else: "Target platforms"}
+          </legend>
           <p class="mb-2 text-zinc-600">
-            Select which Pebble platforms are included in release builds and distributable metadata.
+            {if @project_settings_form["device_family"].value == "handheld",
+              do: "Choose which handhelds this app is packed for. Screen size comes from the device.",
+              else: "Select which Pebble platforms are included in release builds and distributable metadata."}
           </p>
           <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <label
-              :for={platform <- target_platform_options()}
+              :for={platform <- target_platform_options(@project_settings_form["device_family"].value)}
               class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2"
             >
               <input
@@ -272,7 +308,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
         <fieldset class="text-xs md:col-span-2">
           <legend class="mb-1 block font-medium text-zinc-700">Compiler size profile</legend>
           <p class="mb-2 text-zinc-600">
-            Size optimization is enabled by default for watch builds. Uncheck to use the balanced codegen profile.
+            {if @project_settings_form["device_family"].value == "handheld",
+              do: "Size optimization is enabled by default. Uncheck to use the balanced codegen profile.",
+              else: "Size optimization is enabled by default for watch builds. Uncheck to use the balanced codegen profile."}
           </p>
           <input type="hidden" name="project_settings[optimize_for_size]" value="false" />
           <label class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
@@ -287,12 +325,17 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
               <span class="block font-medium text-zinc-800">Optimize for size</span>
               <span class="block text-zinc-500">
                 Enables the <code class="text-[11px]">:size</code>
-                codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for smaller watch binaries.
+                {if @project_settings_form["device_family"].value == "handheld",
+                  do: "codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for a smaller binary.",
+                  else: "codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for smaller watch binaries."}
               </span>
             </span>
           </label>
         </fieldset>
-        <fieldset class="text-xs md:col-span-2">
+        <fieldset
+          :if={@project_settings_form["device_family"].value != "handheld"}
+          class="text-xs md:col-span-2"
+        >
           <legend class="mb-1 block font-medium text-zinc-700">Capabilities</legend>
           <p class="mb-2 text-zinc-600">
             Detected from Elm API usage in watch and phone sources. These appear in Pebble package metadata.
@@ -449,7 +492,11 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             name={@project_settings_form["github_repo"].name}
             value={@project_settings_form["github_repo"].value}
             class="w-full rounded border border-zinc-300 px-2 py-1.5"
-            placeholder="elm-pebble-watchface"
+            placeholder={
+              if @project_settings_form["device_family"].value == "handheld",
+                do: "handheld-app",
+                else: "elm-pebble-watchface"
+            }
           />
         </label>
         <label class="text-xs">
@@ -539,7 +586,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   defp push_status_class(:running), do: "text-blue-700"
   defp push_status_class(_), do: "text-zinc-700"
 
-  defp target_platform_options do
+  defp target_platform_options("handheld"), do: Ide.Handheld.Models.platform_options()
+
+  defp target_platform_options(_) do
     [
       %{id: "aplite", label: "Build Aplite", help: "eg OG Pebble and Pebble Steel."},
       %{id: "basalt", label: "Build Basalt", help: "eg Pebble Time/Time Steel."},

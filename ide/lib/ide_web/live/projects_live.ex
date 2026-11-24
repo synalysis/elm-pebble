@@ -2,6 +2,7 @@ defmodule IdeWeb.ProjectsLive do
   use IdeWeb, :live_view
 
   alias Ide.Auth
+  alias Ide.DeviceFamily
   alias Ide.GitHub.Credentials
   alias Ide.ProjectTemplates
   alias Ide.ProjectTemplates.Types, as: TemplateTypes
@@ -21,14 +22,18 @@ defmodule IdeWeb.ProjectsLive do
   @impl true
   @spec mount(Types.wire_params(), Types.session_params(), socket()) :: lv_mount()
   def mount(_params, _session, socket) do
+    family = DeviceFamily.family(nil)
+    template = ProjectTemplates.default_template(family)
+
     {:ok,
      socket
      |> assign(:page_title, "Projects")
-     |> assign(:template_categories, ProjectTemplates.picker_categories())
+     |> assign(:device_family, family)
+     |> assign(:template_categories, ProjectTemplates.picker_categories(family))
      |> assign(:template_target_filter, "all")
      |> assign(:template_companion_filter, "all")
      |> assign(:show_create_modal, false)
-     |> assign(:selected_template, "starter")
+     |> assign(:selected_template, template)
      |> assign(:create_name_user_edited, false)
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
      |> assign(:show_import_form, false)
@@ -153,15 +158,17 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("open-create-modal", _params, socket) do
+    template = ProjectTemplates.default_template(socket.assigns.device_family)
+
     {:noreply,
      socket
      |> assign(:show_create_modal, true)
-     |> assign(:selected_template, "starter")
+     |> assign(:selected_template, template)
      |> assign(:create_name_user_edited, false)
      |> assign(:template_target_filter, "all")
      |> assign(:template_companion_filter, "all")
      |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
-     |> autofill_create_name_from_template("starter")}
+     |> autofill_create_name_from_template(template)}
   end
 
   def handle_event("close-create-modal", _params, socket) do
@@ -169,7 +176,7 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   def handle_event("select-template", %{"template" => template}, socket) do
-    if template in ProjectTemplates.template_keys() do
+    if ProjectTemplates.accepted_template?(template) do
       {:noreply,
        socket
        |> assign(:selected_template, template)
@@ -238,7 +245,7 @@ defmodule IdeWeb.ProjectsLive do
          |> put_flash(:info, "Project created.")
          |> load_projects()
          |> assign(:show_create_modal, false)
-         |> assign(:selected_template, "starter")
+         |> assign(:selected_template, ProjectTemplates.default_template(socket.assigns.device_family))
          |> assign(:create_name_user_edited, false)
          |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
          |> push_navigate(to: ~p"/projects/#{project.slug}/editor")}
@@ -290,7 +297,7 @@ defmodule IdeWeb.ProjectsLive do
     |> Map.put("slug", derived_slug)
     |> Map.put("template", template)
     |> Map.put("target_type", ProjectTemplates.target_type_for_template(template))
-    |> Map.put_new("source_roots", ["watch", "protocol", "phone"])
+    |> Map.put("source_roots", ProjectTemplates.source_roots_for_template(template))
   end
 
   @spec normalize_github_import_attrs(project_attrs()) :: project_attrs()
@@ -376,7 +383,7 @@ defmodule IdeWeb.ProjectsLive do
   defp maybe_open_template_from_query(socket, params) do
     template = Map.get(params, "template")
 
-    if is_binary(template) and template in ProjectTemplates.template_keys() do
+    if is_binary(template) and ProjectTemplates.accepted_template?(template) do
       open_create_modal_with_template(socket, template)
     else
       socket
@@ -462,9 +469,13 @@ defmodule IdeWeb.ProjectsLive do
     <div class="mx-auto max-w-6xl space-y-8 p-6">
       <section class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-semibold text-zinc-900">Elm Pebble IDE</h1>
+          <h1 class="text-2xl font-semibold text-zinc-900">
+            {if @device_family == "handheld", do: "Handheld IDE", else: "Elm Pebble IDE"}
+          </h1>
           <p class="mt-2 text-sm text-zinc-600">
-            Create and switch projects. Each project gets isolated watch/protocol/phone source roots.
+            {if @device_family == "handheld",
+              do: "Create a handheld app. Each project is one Elm program for MeowKit or Flipper.",
+              else: "Create and switch projects. Each project gets isolated watch/protocol/phone source roots."}
           </p>
         </div>
         <.link
@@ -691,7 +702,7 @@ defmodule IdeWeb.ProjectsLive do
             >
               <.input field={@form[:name]} type="text" label="Project name" required />
             </.form>
-            <div class="mt-4 flex flex-wrap gap-x-10 gap-y-4">
+            <div :if={@device_family != "handheld"} class="mt-4 flex flex-wrap gap-x-10 gap-y-4">
               <div>
                 <p class="text-xs font-medium text-zinc-600">Project type</p>
                 <div class="mt-1 flex flex-wrap gap-1">
@@ -778,11 +789,18 @@ defmodule IdeWeb.ProjectsLive do
                 >
                   <div class="overflow-hidden rounded border border-zinc-200 bg-zinc-100">
                     <img
+                      :if={is_binary(template.screenshot_url)}
                       src={template.screenshot_url}
                       alt={"#{template.title} preview"}
                       class="mx-auto h-36 w-full object-contain"
                       loading="lazy"
                     />
+                    <div
+                      :if={not is_binary(template.screenshot_url)}
+                      class="flex h-36 items-center justify-center px-3 text-center text-sm font-medium text-zinc-500"
+                    >
+                      {template.title}
+                    </div>
                   </div>
                   <p class="mt-3 text-sm font-medium text-zinc-900">{template.title}</p>
                   <p :if={template.description} class="mt-1 text-xs text-zinc-600">

@@ -33,7 +33,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           required(:status) => :ok | :error,
           required(:artifact_path) => String.t() | nil,
           required(:output) => String.t(),
-          required(:raw) => PebbleToolchain.package_result() | PebbleToolchain.toolchain_error() | nil,
+          required(:raw) =>
+            PebbleToolchain.package_result() | PebbleToolchain.toolchain_error() | nil,
           required(:workspace_root) => String.t()
         }
 
@@ -113,9 +114,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      |> assign(:check_status, :running)
      |> assign(:compile_status, :running)
      |> assign(:manifest_status, :running)
-     |> start_async(:run_build, Auth.carry_current_user(fn ->
-       run_build_pipeline(project, workspace_root, strict?, progress: progress)
-     end))}
+     |> start_async(
+       :run_build,
+       Auth.carry_current_user(fn ->
+         run_build_pipeline(project, workspace_root, strict?, progress: progress)
+       end)
+     )}
   end
 
   def handle_event("run-compile", _params, socket) do
@@ -125,12 +129,15 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:noreply,
      socket
      |> assign(:compile_status, :running)
-     |> start_async(:run_compile, Auth.carry_current_user(fn ->
-       Compiler.compile(
-         Projects.scope_key(project),
-         Compiler.build_page_compile_opts(workspace_root: workspace_root)
-       )
-     end))}
+     |> start_async(
+       :run_compile,
+       Auth.carry_current_user(fn ->
+         Compiler.compile(
+           Projects.scope_key(project),
+           Compiler.build_page_compile_opts(workspace_root: workspace_root)
+         )
+       end)
+     )}
   end
 
   def handle_event("run-manifest", _params, socket) do
@@ -173,7 +180,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   defp manifest_strict_from_params(_params, default), do: default == true
 
-  @spec handle_info({:build_progress, reference(), BuildPipelineProgress.progress_event()}, socket()) ::
+  @spec handle_info(
+          {:build_progress, reference(), BuildPipelineProgress.progress_event()},
+          socket()
+        ) ::
           lv_noreply()
   def handle_info({:build_progress, token, {step, _total, message}}, socket)
       when is_integer(step) and is_binary(message) do
@@ -453,12 +463,15 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
         socket
         |> assign(:check_status, :running)
-        |> start_async(:run_check, Auth.carry_current_user(fn ->
-          Compiler.check(Projects.scope_key(project),
-            workspace_root: compiler_root,
-            source_roots: project.source_roots
-          )
-        end))
+        |> start_async(
+          :run_check,
+          Auth.carry_current_user(fn ->
+            Compiler.check(Projects.scope_key(project),
+              workspace_root: compiler_root,
+              source_roots: project.source_roots
+            )
+          end)
+        )
     end
   end
 
@@ -469,7 +482,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
           | nil
 
-  @type warm_compile_progress_event :: :started | {:cached, term()} | {:fresh, term()} | {:error, term()}
+  @type warm_compile_progress_event ::
+          :started | {:cached, term()} | {:fresh, term()} | {:error, term()}
   @type warm_compile_progress :: (String.t(), warm_compile_progress_event() -> :ok)
 
   @spec warm_debugger_compile_context_work(Project.t(), keyword()) ::
@@ -517,7 +531,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     end
   end
 
-  @spec apply_warm_compile_results(socket(), warm_compile_results(), warm_compile_primary(), keyword()) ::
+  @spec apply_warm_compile_results(
+          socket(),
+          warm_compile_results(),
+          warm_compile_primary(),
+          keyword()
+        ) ::
           socket()
   def apply_warm_compile_results(socket, results, primary, opts \\ []) do
     ingest? = Keyword.get(opts, :ingest, true)
@@ -560,6 +579,283 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   @spec run_build_pipeline(Project.t(), String.t(), boolean(), keyword()) ::
           {:ok, build_pipeline_result()}
   def run_build_pipeline(project, workspace_root, strict?, opts \\ []) do
+    if Ide.DeviceFamily.handheld?(project) do
+      run_handheld_build_pipeline(project, workspace_root, opts)
+    else
+      run_pebble_build_pipeline(project, workspace_root, strict?, opts)
+    end
+  end
+
+  @doc """
+  Compiles this project for Flipper Zero, packs the FAP, and installs it
+  over USB with `ufbt launch`.
+  """
+  @spec install_flipper(Project.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, String.t()}
+  def install_flipper(project, workspace_root, opts \\ []) do
+    opts = Keyword.put(opts, :device, "flipper-zero")
+
+    case Ide.Handheld.FlipperSdk.ensure() do
+      {:error, message} ->
+        {:error, message}
+
+      _ ->
+        install_flipper_built(project, workspace_root, opts)
+    end
+  end
+
+  @doc """
+  Compiles this project for MeowKit and sends it over the USB serial port.
+  The device writes the app onto its card and starts it.
+  """
+  @spec install_meowkit(Project.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, String.t()}
+  def install_meowkit(project, workspace_root, opts \\ []) do
+    opts = Keyword.put(opts, :device, "meowkit")
+    {:ok, built} = run_handheld_build_pipeline(project, workspace_root, opts)
+    path = built.package.artifact_path
+
+    cond do
+      built.status != :ok ->
+        {:error, built.output}
+
+      not is_binary(path) ->
+        {:error, built.output}
+
+      true ->
+        send_meowkit_package(built.output, path, opts)
+    end
+  end
+
+  defp send_meowkit_package(output, path, opts) do
+    case Ide.Handheld.MeowLink.install(path, opts) do
+      {:ok, message} ->
+        {:ok, String.trim(output <> "\n\n" <> message)}
+
+      {:error, reason} ->
+        {:error, output <> "\n\n" <> reason}
+    end
+  end
+
+  defp install_flipper_built(project, workspace_root, opts) do
+    {:ok, built} = run_handheld_build_pipeline(project, workspace_root, opts)
+    path = built.package.artifact_path
+
+    cond do
+      built.status != :ok ->
+        {:error, built.output}
+
+      not is_binary(path) ->
+        {:error, built.output}
+
+      true ->
+        case Ide.Handheld.Pack.launch_flipper(path) do
+          {:ok, log} ->
+            {:ok, String.trim(built.output <> "\n\n" <> log)}
+
+          {:error, reason} ->
+            {:error, built.output <> "\n\n" <> Ide.Handheld.Pack.launch_error_message(reason)}
+        end
+    end
+  end
+
+  defp run_handheld_build_pipeline(project, workspace_root, opts) do
+    progress = Keyword.get(opts, :progress, fn _ -> :ok end)
+    device = handheld_pipeline_device(project, opts)
+    device_name = Ide.Handheld.Models.profile(device)["name"]
+    roots = build_roots(workspace_root, project.source_roots || [])
+
+    BuildPipelineProgress.emit(progress, 1, "Checking #{device_name}…")
+
+    root_results =
+      Enum.map(roots, fn {label, root_path} ->
+        BuildPipelineProgress.emit(progress, 1, "Checking #{label}…")
+
+        {:ok, single} =
+          run_handheld_root(
+            Projects.scope_key(project),
+            label,
+            root_path,
+            device,
+            device_name,
+            progress
+          )
+
+        single
+      end)
+
+    primary = List.first(root_results)
+    roots_ok? = Enum.all?(root_results, fn result -> result.status == :ok end)
+
+    BuildPipelineProgress.emit(progress, 4, "Packing #{device_name}…")
+
+    package_result =
+      run_handheld_package(project, workspace_root, device, device_name, roots_ok?, primary)
+
+    issues = build_issues(root_results, package_result)
+
+    status =
+      if roots_ok? and package_result.status == :ok,
+        do: :ok,
+        else: :error
+
+    output =
+      root_results
+      |> Enum.map(fn result ->
+        [
+          "=== [#{result.label}] #{result.root_path} ===",
+          render_build_pipeline_output(result.check, result.compile, result.manifest)
+        ]
+        |> Enum.join("\n")
+      end)
+      |> Kernel.++([render_package_validation_output(package_result)])
+      |> Enum.join("\n\n")
+      |> String.trim()
+
+    BuildPipelineProgress.emit(
+      progress,
+      5,
+      if(status == :ok, do: "Build complete", else: "Build finished with errors")
+    )
+
+    {:ok,
+     %{
+       status: status,
+       output: output,
+       primary: primary,
+       package: package_result,
+       issues: issues,
+       roots: root_results
+     }}
+  end
+
+  defp run_handheld_root(scope_key, label, root_path, device, device_name, progress) do
+    scoped_slug = Projects.compiler_cache_key(scope_key, label)
+
+    with {:ok, check_result} <-
+           Compiler.check_build_root(label, scoped_slug, workspace_root: root_path) do
+      if check_result.status == :ok do
+        BuildPipelineProgress.emit(progress, 2, "Compiling for #{device_name}…")
+
+        {:ok, compile_result} =
+          Compiler.compile(
+            scoped_slug,
+            Compiler.production_compile_opts(workspace_root: root_path, elmc_target: device)
+          )
+
+        manifest_result =
+          ok_skipped_manifest_result(
+            root_path,
+            false,
+            "#{device_name} is packed from the compiled app."
+          )
+
+        {:ok,
+         %{
+           label: label,
+           root_path: root_path,
+           status: if(compile_result.status == :ok, do: :ok, else: :error),
+           check: check_result,
+           compile: compile_result,
+           manifest: manifest_result
+         }}
+      else
+        {:ok,
+         %{
+           label: label,
+           root_path: root_path,
+           status: :error,
+           check: check_result,
+           compile: skipped_compile_result(root_path, "Compile skipped: check failed."),
+           manifest:
+             ok_skipped_manifest_result(root_path, false, "Manifest skipped: check failed.")
+         }}
+      end
+    end
+  end
+
+  defp xtensa_image?(dir) when is_binary(dir) do
+    case File.read(Path.join(dir, "app.meow")) do
+      {:ok, <<"MEOW", _version::little-16, 1::little-16, _rest::binary>>} -> true
+      _ -> false
+    end
+  end
+
+  defp run_handheld_package(_project, workspace_root, _device, device_name, false, _primary) do
+    %{
+      status: :error,
+      artifact_path: nil,
+      output: "Packing #{device_name} skipped: compile failed.",
+      raw: nil,
+      workspace_root: workspace_root,
+      label: "handheld package"
+    }
+  end
+
+  defp run_handheld_package(project, workspace_root, device, device_name, true, primary) do
+    dest = Path.join(workspace_root, "dist")
+
+    elmc_out =
+      case primary do
+        %{root_path: root} when is_binary(root) -> Path.join(root, ".elmc-build")
+        _ -> nil
+      end
+
+    case Ide.Handheld.Pack.pack(Ide.Handheld.Models.pack_target(device), dest,
+           id: project.slug,
+           name: project.name || project.slug,
+           profile: device,
+           elmc_out: elmc_out
+         ) do
+      {:ok, path} ->
+        kind =
+          cond do
+            String.ends_with?(path, ".fap") -> "FAP"
+            xtensa_image?(path) -> "Xtensa image"
+            File.regular?(Path.join(path, "app.so")) -> "host app"
+            Ide.Handheld.Models.pack_target(device) == :flipper -> "FAP scaffold"
+            true -> "SD package"
+          end
+
+        %{
+          status: :ok,
+          artifact_path: path,
+          output: "Packed #{device_name} #{kind}.\n#{path}",
+          raw: nil,
+          workspace_root: workspace_root,
+          label: "handheld package"
+        }
+
+      {:error, reason} ->
+        %{
+          status: :error,
+          artifact_path: nil,
+          output: "Packing #{device_name} failed.\n#{inspect(reason)}",
+          raw: reason,
+          workspace_root: workspace_root,
+          label: "handheld package"
+        }
+    end
+  end
+
+  defp handheld_pipeline_device(project, opts) do
+    case Keyword.get(opts, :device) do
+      id when is_binary(id) and id != "" -> Ide.DeviceFamily.normalize_id(project, id)
+      _ -> handheld_build_device(project)
+    end
+  end
+
+  defp handheld_build_device(project) do
+    settings = project.debugger_settings || %{}
+
+    raw =
+      Map.get(settings, "emulator_target") ||
+        Map.get(settings, "watch_profile_id")
+
+    Ide.DeviceFamily.normalize_id(project, raw)
+  end
+
+  defp run_pebble_build_pipeline(project, workspace_root, strict?, opts) do
     progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     roots = build_roots(workspace_root, project.source_roots || [])
 
@@ -631,7 +927,11 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       |> Enum.map(fn result ->
         %{
           title: "Source-root build failed: #{result.label}",
-          message: "Check, compile, or manifest validation failed before PBW packaging.",
+          message:
+            if(Map.get(package_result, :label) == "handheld package",
+              do: "Check or compile failed before packing the device.",
+              else: "Check, compile, or manifest validation failed before PBW packaging."
+            ),
           detail: result.root_path
         }
       end)
@@ -710,8 +1010,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec render_package_validation_output(package_validation_result()) :: String.t()
   def render_package_validation_output(package_result) do
+    label = Map.get(package_result, :label, "pbw package")
+
     """
-    === [pbw package] ===
+    === [#{label}] ===
     #{package_result.output}
     """
     |> String.trim()
@@ -898,7 +1200,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   @spec package_for_emulator_session(Project.t(), String.t(), String.t(), keyword()) ::
           {:ok, PebbleToolchain.package_result()} | {:error, PebbleToolchain.toolchain_error()}
   def package_for_emulator_session(project, workspace_root, emulator_target, opts \\ []) do
-    production_build? = IdeWeb.WorkspaceLive.EmulatorFlow.project_emulator_production_build(project)
+    production_build? =
+      IdeWeb.WorkspaceLive.EmulatorFlow.project_emulator_production_build(project)
 
     with {:ok, platform} <- normalize_emulator_package_platform(emulator_target),
          :ok <- Projects.ensure_packagable_workspace(project),

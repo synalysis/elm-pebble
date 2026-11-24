@@ -159,9 +159,13 @@ defmodule Ide.Packages.ElmJsonEditor do
 
   @spec candidate_roots(project()) :: [String.t()]
   def candidate_roots(project) do
-    prioritized = ["watch", "protocol", "phone"]
     source_roots = Map.get(project, :source_roots, [])
-    (prioritized ++ source_roots) |> Enum.uniq()
+
+    if Ide.DeviceFamily.handheld?(project) do
+      source_roots
+    else
+      (["watch", "protocol", "phone"] ++ source_roots) |> Enum.uniq()
+    end
   end
 
   @doc """

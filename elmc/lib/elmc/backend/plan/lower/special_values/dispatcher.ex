@@ -24,7 +24,9 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher do
 
   alias Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.String, as: StdlibString
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Handheld
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Handheld, as: HandheldValues
 
   @pebble_only_handlers [Draw, Cmd, Events, Phone]
 
@@ -43,6 +45,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher do
     Core
   ]
 
+  @handheld_handlers [HandheldValues | @shared_handlers]
   @handlers @pebble_only_handlers ++ @shared_handlers
 
   @spec special_value_from_target(String.t(), Types.special_value_args() | nil) ::
@@ -86,10 +89,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher do
   @spec handlers_for(keyword()) :: [module()]
 
   defp handlers_for(opts) do
-    if PlatformWeb.web_target?(opts) do
-      @shared_handlers
-    else
-      @handlers
+    cond do
+      PlatformWeb.web_target?(opts) -> @shared_handlers
+      Handheld.target?(opts) -> @handheld_handlers
+      true -> @handlers
     end
   end
 

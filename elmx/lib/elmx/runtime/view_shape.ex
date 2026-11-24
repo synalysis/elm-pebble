@@ -18,6 +18,20 @@ defmodule Elmx.Runtime.ViewShape do
   }
 
   @spec normalize(Types.view_shape_input()) :: Types.view_output_tree()
+  def normalize(%{"kind" => "batch", "commands" => commands}) when is_list(commands) do
+    case Enum.filter(commands, &draw_node?/1) do
+      [] ->
+        %{"type" => "node", "label" => "batch", "children" => []}
+
+      ops ->
+        normalize(ops)
+    end
+  end
+
+  def normalize(%{kind: "batch", commands: commands}) when is_list(commands) do
+    normalize(%{"kind" => "batch", "commands" => commands})
+  end
+
   def normalize(term) do
     case coerce(term) do
       %{"type" => _} = node ->
@@ -73,8 +87,11 @@ defmodule Elmx.Runtime.ViewShape do
   def coerce(list) when is_list(list), do: Enum.map(list, &coerce/1)
   def coerce(other), do: other
 
-  @spec tagged_ctor_args(term() | list() | Types.elm_value()) :: Types.elm_value()
+  defp draw_node?(%{"type" => type}) when is_binary(type), do: true
+  defp draw_node?(%{type: type}) when is_binary(type) or is_atom(type), do: true
+  defp draw_node?(_), do: false
 
+  @spec tagged_ctor_args(term() | list() | Types.elm_value()) :: Types.elm_value()
   defp tagged_ctor_args({left, right}), do: [coerce(left), coerce(right)]
   defp tagged_ctor_args(list) when is_list(list), do: Enum.map(list, &coerce/1)
   defp tagged_ctor_args(other), do: [coerce(other)]

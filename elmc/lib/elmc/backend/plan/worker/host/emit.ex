@@ -22,6 +22,8 @@ defmodule Elmc.Backend.Plan.Worker.Host.Emit do
 
     #{dispatch_fn(plan)}
 
+    #{capture_view_fn(plan)}
+
     #{SharedEmit.tea_host_api_c()}
     """
   end
@@ -141,6 +143,36 @@ defmodule Elmc.Backend.Plan.Worker.Host.Emit do
     }
     """
   end
+
+  defp capture_view_fn(%{capture_view?: true, entry_module: entry}) do
+    safe = String.replace(entry, ".", "_")
+
+    """
+    int elmc_worker_capture_view(ElmcWorkerState *state) {
+      ElmcValue *view = NULL;
+      ElmcValue *queue = NULL;
+      RC rc;
+      if (!state || !state->model) return -1;
+      rc = elmc_fn_#{safe}_view(&view, state->model);
+      if (rc != RC_SUCCESS) {
+        elmc_release(view);
+        return -2;
+      }
+      rc = elmc_cmd_queue_normalize(&queue, view);
+      if (rc != RC_SUCCESS) {
+        elmc_release(queue);
+        return -2;
+      }
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
+      elmc_worker_snapshot_last_dispatch_cmds(state, queue);
+    #endif
+      elmc_release(queue);
+      return 0;
+    }
+    """
+  end
+
+  defp capture_view_fn(_plan), do: ""
 
   defp init_missing_guard(%{present?: true}), do: ""
 

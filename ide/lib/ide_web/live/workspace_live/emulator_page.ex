@@ -47,13 +47,18 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
       ]}
       aria-hidden={@pane != :emulator}
     >
-      <h2 class="text-base font-semibold">Emulator</h2>
+      <h2 class="text-base font-semibold">
+        {if @device_family == "handheld", do: "Handheld", else: "Emulator"}
+      </h2>
       <p class="mt-2 text-sm text-zinc-600">
-        Choose an embedded emulator with browser controls, or use an external Pebble SDK emulator window.
+        {if @device_family == "handheld",
+          do: "Choose a handheld type. The preview uses that panel, and packing writes a MeowKit SD package or a Flipper FAP scaffold.",
+          else: "Choose an embedded emulator with browser controls, or use an external Pebble SDK emulator window."}
       </p>
       <div
         :if={
-          embedded_emulator_mode?(@emulator_mode) and
+          @device_family != "handheld" and
+            embedded_emulator_mode?(@emulator_mode) and
             emulator_setup_needs_attention?(@emulator_installation_status)
         }
         class="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
@@ -82,19 +87,51 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
         <.input
           field={@emulator_form[:target]}
           type="select"
-          label="Watch model / emulator target"
-          options={@emulator_targets}
+          label={if @device_family == "handheld", do: "Handheld type", else: "Watch model / emulator target"}
+          options={emulator_target_options(@device_family, @emulator_targets)}
         />
         <.input
+          :if={@device_family != "handheld"}
           field={@emulator_form[:mode]}
           type="select"
           label="Emulator"
           options={@emulator_mode_options}
         />
+        <input :if={@device_family == "handheld"} type="hidden" name="emulator[mode]" value="embedded" />
       </.form>
 
       <div
-        :if={embedded_emulator_mode?(@emulator_mode)}
+        :if={@device_family == "handheld"}
+        id="handheld-preview"
+        class="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold">{handheld_profile_name(@selected_emulator_target)}</h3>
+            <p class="mt-1 text-xs text-zinc-600">{handheld_preview_caption(@selected_emulator_target)}</p>
+            <p class="mt-1 text-xs text-zinc-600">
+              Modules: {handheld_modules(@selected_emulator_target)}
+            </p>
+          </div>
+          <button
+            type="button"
+            phx-click="pack-handheld"
+            disabled={@handheld_pack_status == :running}
+            class="rounded bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700"
+          >
+            {if @handheld_pack_status == :running, do: "Packing...", else: "Pack for this handheld"}
+          </button>
+        </div>
+        <div
+          class="mt-4 border border-zinc-400 bg-black"
+          style={emulator_canvas_style(@selected_emulator_target)}
+        >
+        </div>
+        <p :if={@handheld_pack_output} class="mt-3 text-xs text-zinc-700">{@handheld_pack_output}</p>
+      </div>
+
+      <div
+        :if={embedded_emulator_mode?(@emulator_mode) and @device_family != "handheld"}
         id="embedded-emulator"
         phx-hook="EmbeddedEmulator"
         data-project-slug={@project.slug}
@@ -691,7 +728,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
           >
             {if @capture_all_status == :running,
               do: "Capturing all models...",
-              else: "Capture all watch models"}
+              else: if(@device_family == "handheld", do: "Capture all handheld types", else: "Capture all watch models")}
           </.button>
           <span class="text-xs text-zinc-600">
             Batch status: {check_status_label(@capture_all_status)}
@@ -852,15 +889,40 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @spec emulator_screen_size(String.t()) :: {pos_integer(), pos_integer()}
   defp emulator_screen_size(target) when is_binary(target) do
-    screen = target |> WatchModels.profile_for() |> Map.get("screen", %{})
-
-    {
-      Map.get(screen, "width", 144) |> max(1),
-      Map.get(screen, "height", 168) |> max(1)
-    }
+    {width, height, _unpublished} = Ide.DeviceFamily.preview_screen(target)
+    {max(width, 1), max(height, 1)}
   end
 
   defp emulator_screen_size(_), do: {144, 168}
+
+  defp emulator_target_options("handheld", _targets) do
+    Enum.map(Ide.Handheld.Models.list_items(), fn item -> {item["label"], item["id"]} end)
+  end
+
+  defp emulator_target_options(_family, targets), do: targets
+
+  defp handheld_profile_name(target) do
+    Ide.Handheld.Models.profile(target)["name"]
+  end
+
+  defp handheld_preview_caption(target) do
+    {width, height, unpublished} = Ide.Handheld.Models.preview_screen(target)
+    depth = Ide.Handheld.Models.profile(target)["color_depth"]
+    depth_label = if depth == 1, do: "mono", else: "color"
+
+    if unpublished do
+      "Panel size is unpublished. The frame is a stand-in; the app reads graphics metrics."
+    else
+      "#{width}×#{height} #{depth_label}"
+    end
+  end
+
+  defp handheld_modules(target) do
+    case Ide.Handheld.Models.present_modules(target) do
+      [] -> "none"
+      names -> Enum.join(names, ", ")
+    end
+  end
 
   attr :prefix, :string, required: true
   attr :style, :string, default: nil
@@ -914,9 +976,13 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @spec emulator_display_shape(String.t()) :: String.t()
   defp emulator_display_shape(target) do
-    target
-    |> WatchModels.profile_for()
-    |> Map.get("shape", "rect")
+    if Ide.Handheld.Models.known?(target) do
+      "rect"
+    else
+      target
+      |> WatchModels.profile_for()
+      |> Map.get("shape", "rect")
+    end
   end
 
   @spec emulator_settings_path(Project.t() | nil) :: String.t()

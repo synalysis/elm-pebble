@@ -19,6 +19,7 @@ defmodule Ide.ProjectReadme do
     name = project.name || "Elm Pebble project"
     kind = target_kind(project.target_type)
     description = project_description(project)
+    handheld? = Ide.DeviceFamily.handheld?(project)
 
     """
     #{@marker_start}
@@ -26,24 +27,17 @@ defmodule Ide.ProjectReadme do
 
     #{description_block(description)}
 
-    This repository contains an **Elm Pebble** #{kind} created in the [Elm Pebble IDE](#{@site_url}).
+    #{intro(handheld?, kind)}
 
-    ## Develop and publish
+    ## Develop
 
-    Open the project in the IDE to edit Elm source, run the emulator, capture App Store screenshots, and publish releases:
+    Open the project in the IDE to edit the Elm source.
 
     **#{@site_url}**
 
     ## Repository layout
 
-    | Path | Purpose |
-    |------|---------|
-    | `src/` | Watch (and related) Elm application source |
-    | `protocol/`, `phone/` | Companion protocol and phone app (when present) |
-    | `screenshots/` | Emulator screenshots for App Store listings (per watch platform) |
-    | `store_assets/` | App Store listing icons configured in Project Settings |
-
-    Build artifacts and the local Pebble SDK tree (`.pebble-sdk/`) are not committed to Git; they are reproduced when you build from the IDE.
+    #{layout(handheld?)}
 
     #{@marker_end}
     """
@@ -92,6 +86,37 @@ defmodule Ide.ProjectReadme do
     else
       generated
     end
+  end
+
+  defp intro(true, _kind) do
+    "This repository contains a handheld Elm app for MeowKit or Flipper. It has one program and no companion app or protocol interface."
+  end
+
+  defp intro(false, kind) do
+    "This repository contains an **Elm Pebble** #{kind} created in the [Elm Pebble IDE](#{@site_url})."
+  end
+
+  defp layout(true) do
+    """
+    | Path | Purpose |
+    |------|---------|
+    | `app/src/` | Handheld Elm application |
+
+    Hardware examples (USB, NFC, infrared, GPIO, radio, vibes, battery) live in `Handheld.*`.
+    """
+  end
+
+  defp layout(false) do
+    """
+    | Path | Purpose |
+    |------|---------|
+    | `src/` | Watch (and related) Elm application source |
+    | `protocol/`, `phone/` | Companion protocol and phone app (when present) |
+    | `screenshots/` | Emulator screenshots for App Store listings (per watch platform) |
+    | `store_assets/` | App Store listing icons configured in Project Settings |
+
+    Build artifacts and the local Pebble SDK tree (`.pebble-sdk/`) are not committed to Git; they are reproduced when you build from the IDE.
+    """
   end
 
   @spec target_kind(String.t() | nil) :: String.t()

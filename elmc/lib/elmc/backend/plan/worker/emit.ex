@@ -99,6 +99,9 @@ defmodule Elmc.Backend.Plan.Worker.Emit do
       if (!state) return;
       for (int i = 0; i < ELMC_WORKER_SUB_TAG_SLOTS; i++) state->sub_msg_tags[i] = 0;
       state->button_raw_sub_count = 0;
+      state->handheld_presses_tag = 0;
+      state->handheld_taps_tag = 0;
+      state->handheld_nfc_tag = 0;
     }
 
     static int elmc_worker_mask_is_button_raw(int64_t mask) {
@@ -111,6 +114,18 @@ defmodule Elmc.Backend.Plan.Worker.Emit do
       if (sub->tag == ELMC_TAG_SUB && sub->payload != NULL) {
         ElmcSubPayload *payload = (ElmcSubPayload *)sub->payload;
         state->subscriptions |= payload->mask;
+        if (payload->arity > 0 && payload->mask == 134217728) {
+          state->handheld_presses_tag = payload->p0;
+          return;
+        }
+        if (payload->arity > 0 && payload->mask == 268435456) {
+          state->handheld_taps_tag = payload->p0;
+          return;
+        }
+        if (payload->arity > 0 && payload->mask == 536870912) {
+          state->handheld_nfc_tag = payload->p0;
+          return;
+        }
         if (elmc_worker_mask_is_button_raw(payload->mask) && payload->arity >= 3) {
           if (state->button_raw_sub_count < ELMC_WORKER_MAX_BUTTON_RAW_SUBS) {
             ElmcButtonRawSub *entry = &state->button_raw_subs[state->button_raw_sub_count++];

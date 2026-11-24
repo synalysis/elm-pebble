@@ -11,6 +11,24 @@ defmodule Elmx.LaunchContextTest do
     assert LaunchContext.launch_reason_to_int(%{"ctor" => "LaunchUnknown", "args" => []}) == -1
   end
 
+  test "normalize keeps a handheld launch context" do
+    normalized =
+      LaunchContext.normalize(%{
+        "kind" => "handheld",
+        "device" => "flipper-zero",
+        "touch" => false,
+        "screen" => %{"width" => 128, "height" => 64, "colorDepth" => 1}
+      })
+
+    assert normalized == %{
+             "device" => :FlipperZero,
+             "touch" => false,
+             "screen" => %{"width" => 128, "height" => 64, "colorDepth" => 1}
+           }
+
+    assert LaunchContext.normalize(normalized) == normalized
+  end
+
   test "normalize maps launch_reason string to reason ctor" do
     normalized =
       LaunchContext.normalize(%{

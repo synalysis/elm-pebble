@@ -19,6 +19,7 @@ defmodule IdeWeb.SimulatorSettingsForm do
   attr :change_event, :string, default: "simulator-save-settings"
   attr :class, :string, default: nil
   attr :description, :string, default: nil
+  attr :empty_message, :string, default: nil
   attr :group_columns, :integer, default: 2
 
   @spec simulator_settings_form(assigns()) :: rendered()
@@ -57,7 +58,8 @@ defmodule IdeWeb.SimulatorSettingsForm do
         :if={@empty?}
         class="mt-3 rounded border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-[11px] text-zinc-500"
       >
-        No simulator controls apply to this project yet. Add watch or companion API usage in Elm to enable settings here.
+        {@empty_message ||
+          "No simulator controls apply to this project yet. Add watch or companion API usage in Elm to enable settings here."}
       </p>
 
       <div

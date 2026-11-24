@@ -3643,8 +3643,53 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_pebble_cmd(instr, slots, rc?, dest, opts),
-    do: emit_pebble_cmd_ints(instr, slots, rc?, dest, opts)
+  defp emit_pebble_cmd(%{args: %{params: params}} = instr, slots, rc?, dest, opts) do
+    params = params || []
+
+    case Enum.split_with(params, &string_value_reg?(&1, opts)) do
+      {[text], ints} when length(ints) <= 5 ->
+        emit_text_bearing_cmd(instr, ints, text, slots, rc?, dest, opts)
+
+      _ ->
+        emit_pebble_cmd_ints(instr, slots, rc?, dest, opts)
+    end
+  end
+
+  # The string is not an integer. elmc_as_int on it is 0, so the host drew nothing.
+  defp emit_text_bearing_cmd(%{args: %{kind: kind}}, ints, text, slots, rc?, dest, opts) do
+    kind_s = Map.get(kind, :c_expr, "0")
+    int_refs = Enum.map(ints, &int_operand_ref(&1, slots, opts))
+    padded = int_refs ++ List.duplicate("0", 5 - length(int_refs))
+    text_s = boxed_string_c_arg(text, slots, opts)
+    args = Enum.join([Integer.to_string(length(ints)), kind_s | padded] ++ [text_s], ", ")
+    emit_pebble_cmd_call("elmc_cmd_text", args, rc?, dest)
+  end
+
+  @string_value_builtins [:string_append, :string_from_int, :string_left, :string_join]
+
+  defp string_value_reg?(reg, opts, seen \\ MapSet.new())
+
+  defp string_value_reg?(reg, opts, seen) when is_integer(reg) do
+    if MapSet.member?(seen, reg) do
+      false
+    else
+      case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+        %{op: :const_immortal_string} ->
+          true
+
+        %{op: :call_runtime, args: %{builtin: :retain, args: [src]}} when is_integer(src) ->
+          string_value_reg?(src, opts, MapSet.put(seen, reg))
+
+        %{op: :call_runtime, args: %{builtin: builtin}} when builtin in @string_value_builtins ->
+          true
+
+        _ ->
+          false
+      end
+    end
+  end
+
+  defp string_value_reg?(_, _, _), do: false
 
   defp emit_pebble_cmd_ints(%{args: %{builtin: id, kind: kind, params: params}} = _instr, slots, rc?, dest, opts) do
     sym = RuntimeBuiltins.c_symbol(id) || "elmc_cmd0"

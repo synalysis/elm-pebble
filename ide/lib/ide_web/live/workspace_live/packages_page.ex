@@ -26,10 +26,9 @@ defmodule IdeWeb.WorkspaceLive.PackagesPage do
         <.settings_nav pane={@pane} project={@project} class="mb-4" />
         <h2 class="text-base font-semibold">Dependencies</h2>
         <p class="mt-1 text-sm text-zinc-600">
-          Manage <span class="font-mono">elm.json</span>
-          for the <span class="font-mono">watch</span>
-          or <span class="font-mono">phone</span>
-          (companion) app only — not <span class="font-mono">protocol</span>. Add packages from Catalog search (Inspect, then add). Required runtime packages cannot be removed.
+          {if @device_family == "handheld",
+            do: "Manage elm.json for the handheld app.",
+            else: "Manage elm.json for the watch or phone (companion) app only — not protocol. Add packages from Catalog search (Inspect, then add). Required runtime packages cannot be removed."}
         </p>
 
         <.form

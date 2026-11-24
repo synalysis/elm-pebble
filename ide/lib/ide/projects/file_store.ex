@@ -201,6 +201,7 @@ defmodule Ide.Projects.FileStore do
     [
       workspace_path,
       Path.join(workspace_path, "watch"),
+      Path.join(workspace_path, "app"),
       Path.join(workspace_path, "protocol"),
       Path.join(workspace_path, "phone")
     ]

@@ -77,7 +77,7 @@ defmodule Ide.Projects do
       |> put_owner(user)
       |> infer_target_type_from_template()
       |> merge_template_release_defaults()
-      |> Map.put_new("source_roots", @default_source_roots)
+      |> put_template_source_roots()
       |> Map.put_new("template", "starter")
       |> assign_default_app_uuid()
 
@@ -874,6 +874,14 @@ defmodule Ide.Projects do
     ResourceStore.ensure_generated(project)
   end
 
+  defp maybe_ensure_bitmap_generated(%Project{} = project, template) do
+    if ProjectTemplates.handheld_template?(template) do
+      :ok
+    else
+      ensure_bitmap_generated(project)
+    end
+  end
+
   @doc """
   Ensures the generated phone preferences bridge exists when a phone app declares preferences.
   """
@@ -1031,7 +1039,7 @@ defmodule Ide.Projects do
          :ok <- ProjectTemplates.apply_template(template, workspace),
          :ok <- Ide.ProjectReadme.write(workspace, project),
          :ok <- ProjectBundle.write_manifest(workspace, project, template: template),
-         :ok <- ensure_bitmap_generated(project) do
+         :ok <- maybe_ensure_bitmap_generated(project, template) do
       {:ok, project}
     end
   end
@@ -1080,6 +1088,17 @@ defmodule Ide.Projects do
 
   @spec template_key(Types.project_attrs()) :: String.t()
   defp template_key(attrs), do: Map.get(attrs, "template", "starter")
+
+  @spec put_template_source_roots(Types.project_attrs()) :: Types.project_attrs()
+  defp put_template_source_roots(attrs) do
+    template = Map.get(attrs, "template", "starter")
+
+    if ProjectTemplates.handheld_template?(template) do
+      Map.put(attrs, "source_roots", ProjectTemplates.source_roots_for_template(template))
+    else
+      Map.put_new(attrs, "source_roots", @default_source_roots)
+    end
+  end
 
   @spec infer_target_type_from_template(Types.project_attrs()) :: Types.project_attrs()
   defp infer_target_type_from_template(attrs) do

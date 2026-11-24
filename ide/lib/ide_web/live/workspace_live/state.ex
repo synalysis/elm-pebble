@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.State do
   import Phoenix.Component, only: [assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [allow_upload: 3]
 
+  alias Ide.DeviceFamily
   alias Ide.Projects
   alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
@@ -92,6 +93,9 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:capture_all_token, nil)
     |> assign(:screenshots, [])
     |> assign(:screenshot_groups, [])
+    |> assign(:device_family, DeviceFamily.family(nil))
+    |> assign(:handheld_pack_status, :idle)
+    |> assign(:handheld_pack_output, nil)
     |> assign(:emulator_targets, ToolchainPresenter.emulator_targets())
     |> assign(:selected_emulator_target, default_emulator_target)
     |> assign(
@@ -100,7 +104,12 @@ defmodule IdeWeb.WorkspaceLive.State do
     )
     |> assign(
       :emulator_form,
-      to_form(%{"target" => default_emulator_target, "mode" => "embedded", "production_build" => "true"},
+      to_form(
+        %{
+          "target" => default_emulator_target,
+          "mode" => "embedded",
+          "production_build" => "true"
+        },
         as: :emulator
       )
     )
@@ -123,6 +132,10 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:publish_submit_output, nil)
     |> assign(:sideload_status, :idle)
     |> assign(:sideload_output, nil)
+    |> assign(:flipper_install_status, :idle)
+    |> assign(:flipper_install_output, nil)
+    |> assign(:meowkit_install_status, :idle)
+    |> assign(:meowkit_install_output, nil)
     |> assign(:publish_submit_options, PublishFlow.publish_submit_options(%{}))
     |> assign(:store_assets, %{})
     |> assign(:release_summary, PublishFlow.default_release_summary(nil))
@@ -400,6 +413,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:github_create_status, :idle)
     |> assign(:github_connected?, Ide.GitHub.Credentials.connected?())
     |> assign(:packages_target_root, Map.fetch!(data, :packages_target_root))
+    |> assign(:device_family, DeviceFamily.family(project))
+    |> assign(:emulator_targets, DeviceFamily.emulator_target_ids(project))
     |> assign(:selected_emulator_target, selected_emulator_target)
     |> assign(:emulator_mode, emulator_mode)
     |> assign(
@@ -445,13 +460,17 @@ defmodule IdeWeb.WorkspaceLive.State do
     defaults = project.release_defaults || %{}
     github = Projects.github_config(project)
 
+    family = DeviceFamily.family(project)
+
     %{
       "version_label" => Map.get(defaults, "version_label", ""),
       "description" => Map.get(defaults, "description", ""),
       "website_url" => Ide.StoreListingUrls.form_website_url(project),
       "source_url" => Ide.StoreListingUrls.form_source_url(project),
       "tags" => Map.get(defaults, "tags", ""),
-      "target_platforms" => target_platforms_form_value(Map.get(defaults, "target_platforms")),
+      "device_family" => family,
+      "target_platforms" =>
+        target_platforms_form_value(Map.get(defaults, "target_platforms"), family),
       "optimize_for_size" => Map.get(defaults, "optimize_for_size", true) not in [false, "false"],
       "capabilities" => capabilities_form_value(Map.get(defaults, "capabilities")),
       "github_owner" => Map.get(github, "owner", ""),
@@ -469,6 +488,7 @@ defmodule IdeWeb.WorkspaceLive.State do
       "website_url" => Ide.StoreListingUrls.default_website_url(),
       "source_url" => Ide.StoreListingUrls.default_source_repo_url(),
       "tags" => "",
+      "device_family" => "pebble",
       "target_platforms" => supported_target_platforms(),
       "optimize_for_size" => true,
       "capabilities" => [],
@@ -486,9 +506,12 @@ defmodule IdeWeb.WorkspaceLive.State do
 
   defp resource_upload_progress(_name, _entry, socket), do: {:noreply, socket}
 
-  @spec target_platforms_form_value([String.t()] | String.t() | nil) :: [String.t()]
-  def target_platforms_form_value(value) when is_list(value) do
-    allowed = MapSet.new(supported_target_platforms())
+  @spec target_platforms_form_value([String.t()] | String.t() | nil, String.t()) :: [String.t()]
+  def target_platforms_form_value(value, family \\ "pebble")
+
+  def target_platforms_form_value(value, family) when is_list(value) do
+    allowed_list = platforms_for_family(family)
+    allowed = MapSet.new(allowed_list)
 
     value
     |> Enum.filter(&is_binary/1)
@@ -497,12 +520,15 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> Enum.filter(&MapSet.member?(allowed, &1))
     |> Enum.uniq()
     |> case do
-      [] -> supported_target_platforms()
+      [] -> allowed_list
       platforms -> platforms
     end
   end
 
-  def target_platforms_form_value(_), do: supported_target_platforms()
+  def target_platforms_form_value(_, family), do: platforms_for_family(family)
+
+  defp platforms_for_family("handheld"), do: Ide.Handheld.Models.ordered_ids()
+  defp platforms_for_family(_), do: supported_target_platforms()
 
   @spec supported_capabilities() :: [String.t()]
   def supported_capabilities do

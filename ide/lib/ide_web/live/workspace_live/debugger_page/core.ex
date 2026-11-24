@@ -53,7 +53,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         <div>
           <h2 class="text-base font-semibold">Debugger</h2>
           <p class="mt-1 text-sm text-zinc-600">
-            Elm-style update timeline with selected watch/companion models and watch render output.
+            {if @device_family == "handheld",
+              do: "Elm-style update timeline for the selected handheld.",
+              else: "Elm-style update timeline with selected watch/companion models and watch render output."}
           </p>
         </div>
         <div class="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
@@ -62,13 +64,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
             id="debugger-copy-agent-state"
             text={Export.agent_state_clipboard_text(assigns, @project)}
             label="Copy for agent"
-            title="Copy timeline, watch model, companion model, and rendered view as one markdown document"
+            title={
+              if @device_family == "handheld",
+                do: "Copy timeline, device model, and rendered view as one markdown document",
+                else: "Copy timeline, watch model, companion model, and rendered view as one markdown document"
+            }
           />
         </div>
       </div>
       <p :if={@debugger_state} class="mt-2 text-[11px] text-zinc-500">
         running: {to_string(@debugger_state.running)} · events: {length(@debugger_state.events)} · selected seq: {@debugger_cursor_seq ||
-          "none"} · profile: {@debugger_state.watch_profile_id || "basalt"}
+          "none"} · profile: {debugger_profile_label(@device_family, @debugger_state)}
       </p>
       <div
         :if={@debugger_speaker_effect}
@@ -95,7 +101,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         </button>
         <form class="flex items-center gap-2" phx-change="debugger-set-watch-profile">
           <label class="flex items-center gap-2 text-xs text-zinc-600">
-            <span class="shrink-0">Watch model</span>
+            <span class="shrink-0">
+              {if @device_family == "handheld", do: "Handheld type", else: "Watch model"}
+            </span>
             <select
               name="watch_profile_id"
               disabled={SessionState.bootstrap_busy?(@debugger_bootstrap_status)}
@@ -106,7 +114,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               ]}
             >
               <option
-                :for={profile <- Ide.Debugger.watch_profiles()}
+                :for={profile <- device_profile_options(@device_family)}
                 value={profile["id"]}
                 selected={
                   profile["id"] ==
@@ -227,12 +235,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           >
             <div class="min-h-0 overflow-auto rounded border border-zinc-200 bg-white">
               <p class="sticky top-0 border-b border-zinc-100 bg-zinc-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                Watch
+                {if @device_family == "handheld", do: "App", else: "Watch"}
               </p>
               <.debugger_debugger_timeline_rows
                 rows={DebuggerSupport.debugger_rows_for_target(@debugger_rows, "watch")}
                 selected_row={@debugger_selected_row}
-                empty_label="No watch update messages."
+                empty_label={if @device_family == "handheld", do: "No app update messages.", else: "No watch update messages."}
               />
             </div>
             <div class="min-h-0 overflow-auto rounded border border-zinc-200 bg-white">
@@ -255,17 +263,17 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           <div class="flex min-h-0 flex-col rounded border border-zinc-200 bg-zinc-50 p-2">
             <div class="flex items-center justify-between gap-2">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-600">
-                Watch model
+                {if @device_family == "handheld", do: "Handheld type", else: "Watch model"}
               </h3>
               <.debugger_copy_button
                 id="debugger-watch-model-copy"
                 text={DebuggerSupport.copy_json(ModelMetadata.public_model(@debugger_watch_runtime))}
-                title="Copy watch model as JSON"
+                title={if @device_family == "handheld", do: "Copy device model as JSON", else: "Copy watch model as JSON"}
               />
             </div>
             <.debugger_model_tree runtime={@debugger_watch_runtime} />
             <.debugger_subscription_buttons
-              title="Watch subscribed events"
+              title={if @device_family == "handheld", do: "Device events", else: "Watch subscribed events"}
               rows={@debugger_watch_trigger_buttons}
               target="watch"
               auto_fire_subscriptions={@debugger_auto_fire_subscriptions}
@@ -328,9 +336,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
             <.debugger_view_preview
               runtime={@debugger_watch_view_runtime}
               project={@project}
-              title="Visual preview"
+              device_family={@device_family}
+              device_id={WatchProfiles.selected_id(@debugger_state, @project)}
+              title={if @device_family == "handheld", do: "Device preview", else: "Visual preview"}
               fill={false}
-              show_watch_buttons={true}
+              show_watch_buttons={@device_family != "handheld"}
               watch_trigger_buttons={@debugger_watch_trigger_buttons}
               disabled_subscriptions={@debugger_disabled_subscriptions}
               hover_scope="watch-live"
@@ -342,9 +352,19 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               project={@project}
               debugger_state={@debugger_state}
               mode={:debugger}
-              description="Simulated date/time affects debugger stepping only; the embedded QEMU watch face uses host clock unless you use an external SDK emulator (emu-set-time)."
+              description={
+                if @device_family == "handheld",
+                  do: "Saved for this handheld. These values affect debugger stepping only.",
+                  else: "Simulated date/time affects debugger stepping only; the embedded QEMU watch face uses host clock unless you use an external SDK emulator (emu-set-time)."
+              }
+              empty_message={
+                if @device_family == "handheld",
+                  do: "No extra simulator controls for this handheld yet.",
+                  else: nil
+              }
             />
             <.watch_interactives_panel
+              :if={@device_family != "handheld"}
               id="debugger-watch-interactives"
               project={@project}
               debugger_state={@debugger_state}
@@ -364,6 +384,40 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       <.debugger_trigger_modal open={@debugger_trigger_modal_open} form={@debugger_trigger_form} />
     </section>
     """
+  end
+
+  defp device_profile_options("handheld"), do: Ide.Handheld.Models.list_items()
+  defp device_profile_options(_), do: Ide.Debugger.watch_profiles()
+
+  defp debugger_profile_label("handheld", state) do
+    id = if is_map(state), do: Map.get(state, :watch_profile_id), else: nil
+    Ide.Handheld.Models.profile(id)["name"]
+  end
+
+  defp debugger_profile_label(_family, state) do
+    (is_map(state) && Map.get(state, :watch_profile_id)) || "basalt"
+  end
+
+  defp handheld_buttons("flipper-zero") do
+    button_controls(["Up", "Down", "Left", "Right", "OK", "Back"]) ++ extra_controls()
+  end
+
+  defp handheld_buttons(_id) do
+    button_controls(["A", "B", "Up", "Down", "Left", "Right", "OK"]) ++ extra_controls()
+  end
+
+  defp button_controls(labels) do
+    Enum.map(labels, fn label ->
+      ctor = if label == "OK", do: "Select", else: label
+      %{label: label, trigger: ctor, message: "Pressed " <> ctor}
+    end)
+  end
+
+  defp extra_controls do
+    [
+      %{label: "Tap", trigger: "taps", message: "Tapped"},
+      %{label: "Tag", trigger: "ontag", message: "TagFound"}
+    ]
   end
 
   attr(:id, :string, required: true)
@@ -921,6 +975,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   attr(:runtime, :any, required: true)
   attr(:project, :any, default: nil)
+  attr(:device_family, :string, default: "pebble")
+  attr(:device_id, :string, default: nil)
   attr(:title, :string, default: "Visual preview")
   attr(:fill, :boolean, default: true)
   attr(:show_watch_buttons, :boolean, default: false)
@@ -935,8 +991,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
     tree = Preview.preview_tree(assigns.runtime)
     rendered_tree = debugger_rendered_tree(assigns.runtime)
     preview_tree = Preview.svg_preview_tree(rendered_tree, tree)
-    {screen_w, screen_h} = Preview.dimensions(assigns.runtime, preview_tree)
-    screen_round? = DebuggerPreview.screen_round?(assigns.runtime, tree)
+    {screen_w, screen_h, screen_round?} =
+      if assigns.device_family == "handheld" do
+        {width, height, _unpublished} = Ide.Handheld.Models.preview_screen(assigns.device_id)
+        {width, height, false}
+      else
+        {width, height} = Preview.dimensions(assigns.runtime, preview_tree)
+        {width, height, DebuggerPreview.screen_round?(assigns.runtime, tree)}
+      end
     clip_radius = min(screen_w, screen_h) / 2
     clip_id = Preview.clip_id(assigns.title, assigns.hover_scope, screen_w, screen_h, screen_round?)
     svg_id = Preview.svg_id(assigns.title, assigns.hover_scope)
@@ -970,6 +1032,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           nil
       end
 
+    handheld? = assigns.device_family == "handheld"
+
     assigns =
       assigns
       |> assign(:tree, tree)
@@ -977,6 +1041,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       |> assign(:screen_w, screen_w)
       |> assign(:screen_h, screen_h)
       |> assign(:screen_round?, screen_round?)
+      |> assign(:handheld?, handheld?)
+      |> assign(:handheld_buttons, handheld_buttons(assigns.device_id))
+      |> assign(:screen_label, if(handheld?, do: "Device screen preview", else: "Watch screen preview"))
       |> assign(:clip_cx, screen_w / 2)
       |> assign(:clip_cy, screen_h / 2)
       |> assign(:clip_radius, clip_radius)
@@ -984,7 +1051,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       |> assign(:svg_id, svg_id)
       |> assign(
         :preview_svg_class,
-        Preview.svg_class(screen_round?, assigns.show_watch_buttons)
+        if(handheld?,
+          do: Preview.handheld_svg_class(screen_w, screen_h),
+          else: Preview.svg_class(screen_round?, assigns.show_watch_buttons)
+        )
       )
       |> assign(:svg_ops, svg_ops)
       |> assign(:unresolved_ops, unresolved_ops)
@@ -1027,7 +1097,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
             id={@svg_id}
             viewBox={"0 0 #{@screen_w} #{@screen_h}"}
             role="img"
-            aria-label="Watch screen preview"
+            aria-label={@screen_label}
             class={@preview_svg_class}
           >
             <defs>
@@ -1262,6 +1332,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
             <.debugger_watch_button button={@watch_button_controls.select} />
             <.debugger_watch_button button={@watch_button_controls.down} />
           </div>
+        </div>
+        <div :if={@handheld?} class="mt-2 flex flex-wrap justify-center gap-1">
+          <button
+            :for={button <- @handheld_buttons}
+            type="button"
+            phx-click="debugger-inject-trigger"
+            phx-value-trigger={button.trigger}
+            phx-value-target="watch"
+            phx-value-message={button.message}
+            data-testid={"debugger-handheld-button-#{button.trigger}"}
+            class="rounded border border-zinc-500 bg-zinc-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-zinc-700"
+          >
+            {button.label}
+          </button>
         </div>
         <p :if={@svg_ops == []} class="mt-1 text-center text-[10px] text-zinc-500">
           No drawable primitives found in this snapshot.

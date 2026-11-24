@@ -2005,6 +2005,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_port_incoming_sub(ElmcValue **out, ElmcValue *port_name, ElmcValue *callback);
     RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0);
     RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text);
+    RC elmc_cmd_text(ElmcValue **out, uint8_t arity, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, const char *text);
     RC elmc_cmd_companion_send_value(ElmcValue **out, ElmcValue *message);
     RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
     RC elmc_cmd3(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
@@ -2433,6 +2434,20 @@ defmodule Elmc.Runtime.Generator do
     end)
   end
 
+  # The pruner treats any `#define ELMC_PEBBLE_PLATFORM 1` in the source as live.
+  # Handheld builds never include pebble.h, so that define has to stay out.
+  defp pebble_platform_define(opts) do
+    if Keyword.get(opts, :handheld, false) do
+      ""
+    else
+      """
+      #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
+      #define ELMC_PEBBLE_PLATFORM 1
+      #endif
+      """
+    end
+  end
+
   @spec runtime_source(write_opts()) :: String.t()
   defp runtime_source(opts) do
     {small_min, small_max} = small_int_bounds(opts)
@@ -2446,9 +2461,7 @@ defmodule Elmc.Runtime.Generator do
     #include <math.h>
     #{JsonSections.json_float_numbers_config()}
     #{JsonSections.runtime_source_includes()}
-    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
-    #define ELMC_PEBBLE_PLATFORM 1
-    #endif
+    #{pebble_platform_define(opts)}
     #ifdef ELMC_PEBBLE_PLATFORM
     #include <pebble.h>
     #endif
@@ -2685,13 +2698,7 @@ defmodule Elmc.Runtime.Generator do
                 context ? context : "?", (unsigned long)size);
       }
     #else
-      if (file && line > 0) {
-        fprintf(stderr, "ELMC malloc failed %s %s:%d %lu\\n",
-                context ? context : "?", file, line, (unsigned long)size);
-      } else {
-        fprintf(stderr, "ELMC malloc failed %s %lu\\n",
-                context ? context : "?", (unsigned long)size);
-      }
+      /* Flipper's firmware API has no fprintf. The parameters are already voided. */
     #endif
     }
 
@@ -3878,9 +3885,13 @@ defmodule Elmc.Runtime.Generator do
     }
 
     RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text) {
+      return elmc_cmd_text(out, 1, kind, p0, 0, 0, 0, 0, text);
+    }
+
+    RC elmc_cmd_text(ElmcValue **out, uint8_t arity, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, const char *text) {
       RC rc = RC_SUCCESS;
       CATCH_BEGIN
-        rc = elmc_cmd_alloc(out, 1, kind, p0, 0, 0, 0, 0, 0);
+        rc = elmc_cmd_alloc(out, arity, kind, p0, p1, p2, p3, p4, 0);
         CHECK_RC(rc);
         if (!*out || (*out)->tag != ELMC_TAG_CMD || !(*out)->payload) {
           rc = RC_ERR_INVALID_ARG;

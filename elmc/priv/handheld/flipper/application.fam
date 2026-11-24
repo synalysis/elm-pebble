@@ -1,0 +1,9 @@
+App(
+    appid="elm_handheld",
+    name="Elm App",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="flipper_app_main",
+    stack_size=8 * 1024,
+    fap_category="Tools",
+    requires=["gui"],
+)

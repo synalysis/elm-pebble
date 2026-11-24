@@ -65,6 +65,40 @@ defmodule Elmx.Runtime.Pebble.Registry do
     end
   end
 
+  defp handheld_handlers do
+    alias Elmx.Runtime.Pebble.Handheld
+
+    %{
+      "elmx_handheld_color_rgb" => {Handheld, :color_rgb},
+      "elmx_handheld_clear" => {Handheld, :clear},
+      "elmx_handheld_pixel" => {Handheld, :pixel},
+      "elmx_handheld_line" => {Handheld, :line},
+      "elmx_handheld_rect" => {Handheld, :rect},
+      "elmx_handheld_fill" => {Handheld, :fill},
+      "elmx_handheld_circle" => {Handheld, :circle},
+      "elmx_handheld_fill_circle" => {Handheld, :fill_circle},
+      "elmx_handheld_text" => {Handheld, :text},
+      "elmx_handheld_display_metrics" => {Handheld, :display_metrics},
+      "elmx_handheld_device_ready" => {Handheld, :device_ready},
+      "elmx_handheld_nfc_scan" => {Handheld, :nfc_scan},
+      "elmx_handheld_nfc_read" => {Handheld, :nfc_read},
+      "elmx_handheld_ir_send" => {Handheld, :ir_send},
+      "elmx_handheld_gpio_write" => {Handheld, :gpio_write},
+      "elmx_handheld_gpio_read" => {Handheld, :gpio_read},
+      "elmx_handheld_radio_get" => {Handheld, :radio_get},
+      "elmx_handheld_usb_tap" => {Handheld, :usb_tap},
+      "elmx_handheld_vibes_cancel" => {Handheld, :vibes_cancel},
+      "elmx_handheld_vibes_short" => {Handheld, :vibes_short},
+      "elmx_handheld_vibes_long" => {Handheld, :vibes_long},
+      "elmx_handheld_vibes_double" => {Handheld, :vibes_double},
+      "elmx_handheld_battery_level" => {Handheld, :battery_level},
+      "elmx_handheld_presses" => {Handheld, :presses},
+      "elmx_handheld_on_press" => {Handheld, :on_press},
+      "elmx_handheld_taps" => {Handheld, :taps},
+      "elmx_handheld_on_tag" => {Handheld, :on_tag}
+    }
+  end
+
   @spec handlers_map() :: %{String.t() => handler()}
   defp handlers_map do
     %{}
@@ -74,6 +108,7 @@ defmodule Elmx.Runtime.Pebble.Registry do
     |> Map.merge(Task.handlers())
     |> Map.merge(Time.handlers())
     |> Map.merge(Cmd.handlers())
+    |> Map.merge(handheld_handlers())
     |> Map.merge(Subscription.handlers())
     |> Map.merge(Device.handlers())
     |> Map.merge(Companion.handlers())

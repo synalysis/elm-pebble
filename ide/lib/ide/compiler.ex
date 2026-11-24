@@ -694,7 +694,8 @@ defmodule Ide.Compiler do
         prod: Keyword.get(opts, :prod, false),
         debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
         plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
-        plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true)
+        plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true),
+        target: Keyword.get(opts, :elmc_target)
       }
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)
       |> Map.new()
@@ -860,6 +861,20 @@ defmodule Ide.Compiler do
           compile_result()
   defp maybe_attach_elmx_artifacts(result, project_dir, revision, opts)
        when is_map(result) and is_binary(project_dir) do
+    if handheld_device_compile?(opts) do
+      result
+    else
+      attach_elmx_artifacts(result, project_dir, revision, opts)
+    end
+  end
+
+  defp handheld_device_compile?(opts) when is_list(opts) do
+    Elmc.Backend.Handheld.target?(%{target: Keyword.get(opts, :elmc_target)})
+  end
+
+  defp handheld_device_compile?(_opts), do: false
+
+  defp attach_elmx_artifacts(result, project_dir, revision, opts) do
     elmx_opts =
       [revision: revision]
       |> maybe_put_elmx_entry_module(Keyword.get(opts, :entry_module))
@@ -886,7 +901,7 @@ defmodule Ide.Compiler do
           %{
             severity: "warning",
             source: "elmx",
-            message: message <> " (debugger runtime only; PBW build uses elmc)",
+            message: message <> " (debugger only; the device package is built by elmc)",
             file: nil,
             line: nil,
             column: nil
@@ -908,7 +923,7 @@ defmodule Ide.Compiler do
 
       cond do
         is_binary(message) and message != "" ->
-          note = message <> " (debugger runtime only; PBW build uses elmc)"
+          note = message <> " (debugger only; the device package is built by elmc)"
 
           if is_binary(existing) and existing != "",
             do: existing <> "\n\n" <> note,
@@ -1285,7 +1300,14 @@ defmodule Ide.Compiler do
   defp compile_mode_revision_suffix(opts) do
     prod = Keyword.get(opts, :prod, false)
     policy = Keyword.get(opts, :debug_usage_policy, :error)
-    ":prod=#{prod}:#{policy}"
+    target = Keyword.get(opts, :elmc_target)
+    base = ":prod=#{prod}:#{policy}"
+
+    if is_binary(target) and target != "" do
+      base <> ":target=#{target}"
+    else
+      base
+    end
   end
 
   @spec source_files_for_revision(String.t()) :: [String.t()]

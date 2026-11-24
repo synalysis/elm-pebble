@@ -162,12 +162,17 @@ defmodule Ide.Debugger.RuntimeSurfaces do
         value -> parse_launch_reason(value)
       end
 
-    profile =
-      Map.get(
-        WatchModels.profiles_map(),
-        watch_profile_id,
-        Map.get(WatchModels.profiles_map(), WatchModels.default_id())
-      )
+    if Ide.Handheld.Models.known?(watch_profile_id) do
+      handheld_launch_context(watch_profile_id)
+    else
+      pebble_launch_context(watch_profile_id, launch_reason, settings)
+    end
+  end
+
+  def launch_context_for(_, _, _), do: launch_context_for(WatchModels.default_id(), "LaunchUser", %{})
+
+  defp pebble_launch_context(watch_profile_id, launch_reason, settings) do
+    profile = profile_for_launch(watch_profile_id)
 
     screen = Map.get(profile, "screen") || %{}
     profile_shape = Map.get(profile, "shape")
@@ -198,26 +203,66 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       "quick_launch_action" =>
         parse_quick_launch_action(Map.get(settings, "quick_launch_action")),
       "screen" => %{
-        "width" => Map.get(screen, "width") || 144,
-        "height" => Map.get(screen, "height") || 168,
+        "width" => screen_dim(screen, "width", 144),
+        "height" => screen_dim(screen, "height", 168),
         "shape" => display_shape,
         "color_mode" => Map.get(profile, "color_mode") || "Color"
       }
     }
   end
 
-  def launch_context_for(_, _, _), do: launch_context_for(WatchModels.default_id(), "LaunchUser", %{})
+  defp handheld_device_ctor(device_id) do
+    if Ide.Handheld.Models.normalize(device_id) == "flipper-zero", do: :FlipperZero, else: :MeowKit
+  end
+
+  defp handheld_launch_context(device_id) do
+    profile = Ide.Handheld.Models.profile(device_id)
+    screen = Map.get(profile, "screen") || %{}
+
+    %{
+      "kind" => "handheld",
+      "device" => handheld_device_ctor(device_id),
+      "touch" => Map.get(profile, "has_touch") == true,
+      "screen" => %{
+        "width" => Map.get(screen, "width", 0),
+        "height" => Map.get(screen, "height", 0),
+        "colorDepth" => Map.get(profile, "color_depth", 16)
+      }
+    }
+  end
 
   @spec parse_watch_profile_id(Types.wire_input()) :: String.t()
   def parse_watch_profile_id(value) when is_binary(value) do
     normalized = String.downcase(String.trim(value))
 
-    if Map.has_key?(WatchModels.profiles_map(), normalized),
-      do: normalized,
-      else: WatchModels.default_id()
+    cond do
+      Map.has_key?(WatchModels.profiles_map(), normalized) -> normalized
+      Ide.Handheld.Models.known?(normalized) -> normalized
+      true -> WatchModels.default_id()
+    end
   end
 
   def parse_watch_profile_id(_), do: WatchModels.default_id()
+
+  defp profile_for_launch(watch_profile_id) do
+    cond do
+      Map.has_key?(WatchModels.profiles_map(), watch_profile_id) ->
+        Map.fetch!(WatchModels.profiles_map(), watch_profile_id)
+
+      Ide.Handheld.Models.known?(watch_profile_id) ->
+        Ide.Handheld.Models.watch_shaped_profile(watch_profile_id)
+
+      true ->
+        Map.fetch!(WatchModels.profiles_map(), WatchModels.default_id())
+    end
+  end
+
+  defp screen_dim(screen, key, fallback) do
+    case Map.get(screen, key) do
+      value when is_integer(value) -> value
+      _ -> fallback
+    end
+  end
 
   @spec parse_launch_reason(Types.wire_input()) :: String.t()
   def parse_launch_reason(value) when is_binary(value) do

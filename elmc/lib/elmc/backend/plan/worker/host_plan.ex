@@ -35,7 +35,8 @@ defmodule Elmc.Backend.Plan.Worker.HostPlan do
           update: entry(),
           subscriptions: entry(),
           model_dependent_subs?: boolean(),
-          last_dispatch_cmd_cap: non_neg_integer()
+          last_dispatch_cmd_cap: non_neg_integer(),
+          capture_view?: boolean()
         }
 
   defstruct [
@@ -45,6 +46,7 @@ defmodule Elmc.Backend.Plan.Worker.HostPlan do
     :update,
     :subscriptions,
     model_dependent_subs?: false,
-    last_dispatch_cmd_cap: 8
+    last_dispatch_cmd_cap: 8,
+    capture_view?: false
   ]
 end

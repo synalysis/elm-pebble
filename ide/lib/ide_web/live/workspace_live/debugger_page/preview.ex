@@ -91,6 +91,22 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Preview do
     ]
   end
 
+  @doc """
+  Landscape frame for a handheld panel. Watch previews stay on `svg_class/2`.
+  """
+  @spec handheld_svg_class(pos_integer(), pos_integer()) :: [String.t()]
+  def handheld_svg_class(width, height) when is_integer(width) and is_integer(height) and height > 0 do
+    wide? = width / height >= 1.2
+
+    if wide? do
+      ["mx-auto w-full max-w-md rounded border border-zinc-700 bg-white shadow-inner object-contain"]
+    else
+      ["mx-auto h-52 w-auto max-w-full rounded border border-zinc-700 bg-white shadow-inner object-contain"]
+    end
+  end
+
+  def handheld_svg_class(_width, _height), do: svg_class(false, false)
+
   @spec svg_id(String.t() | nil, String.t() | nil) :: String.t()
   def svg_id(title, hover_scope) do
     key = {title, hover_scope}

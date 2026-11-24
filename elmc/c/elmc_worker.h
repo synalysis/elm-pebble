@@ -48,6 +48,9 @@ typedef struct {
   elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
   ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
   int button_raw_sub_count;
+  elmc_int_t handheld_presses_tag;
+  elmc_int_t handheld_taps_tag;
+  elmc_int_t handheld_nfc_tag;
   int dispatch_needs_render;
 } ElmcWorkerState;
 

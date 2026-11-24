@@ -50,6 +50,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_cmd0",
     "elmc_cmd1",
     "elmc_cmd1_string",
+    "elmc_cmd_text",
     "elmc_cmd2",
     "elmc_cmd3",
     "elmc_cmd4",

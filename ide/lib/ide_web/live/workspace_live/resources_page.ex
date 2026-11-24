@@ -21,7 +21,17 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
 
     ~H"""
     <section
-      :if={@pane == :resources}
+      :if={@pane == :resources and @device_family == "handheld"}
+      class="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+    >
+      <.settings_nav pane={@pane} project={@project} class="mb-4" />
+      <h2 class="text-base font-semibold">Resources</h2>
+      <p class="mt-2 max-w-xl text-sm text-zinc-600">
+        Handheld apps draw with Handheld.Ui. They do not use Pebble bitmaps, fonts, vectors, or speaker samples.
+      </p>
+    </section>
+    <section
+      :if={@pane == :resources and @device_family != "handheld"}
       class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[24rem_minmax(0,1fr)]"
     >
       <aside class="min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">

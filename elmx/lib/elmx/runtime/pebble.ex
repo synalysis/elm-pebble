@@ -16,7 +16,8 @@ defmodule Elmx.Runtime.Pebble do
 
   @spec special_call?(String.t()) :: boolean()
   def special_call?(target) when is_binary(target) do
-    String.starts_with?(target, "Pebble.") or String.starts_with?(target, "Platform.") or
+    String.starts_with?(target, "Pebble.") or String.starts_with?(target, "Handheld.") or
+      String.starts_with?(target, "Platform.") or
       String.starts_with?(target, "Companion.") or
       String.starts_with?(target, "Elm.Kernel.PebbleWatch.") or
       String.starts_with?(target, "Elm.Kernel.PebblePhone.")

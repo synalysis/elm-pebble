@@ -90,7 +90,7 @@ defmodule Elmc.Runtime.RcMacros do
     #define ELMC_RC_LOG_FAIL(rc, site, ...) \\
       do { \\
         elmc_rc_record_fail((rc), __LINE__); \\
-        fprintf(stderr, "ELMC RC %s at %s: " __VA_ARGS__ "\\n", elmc_rc_name(rc), site); \\
+        (void)(site); \\
       } while (0)
     #endif
 

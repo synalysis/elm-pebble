@@ -88,7 +88,7 @@ defmodule Ide.Projects.Project do
     |> validate_length(:source_roots, min: 1)
     |> validate_inclusion(:target_type, @target_types)
     |> validate_change(:template, fn :template, value ->
-      if is_nil(value) or value in ProjectTemplates.template_keys(),
+      if ProjectTemplates.accepted_template?(value),
         do: [],
         else: [template: "is invalid"]
     end)

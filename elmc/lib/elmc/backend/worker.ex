@@ -92,11 +92,17 @@ defmodule Elmc.Backend.Worker do
       elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
       int button_raw_sub_count;
+      /* Handheld.Input.presses / taps and Handheld.Nfc.onTag. Masks match
+       * HANDHELD_SUB_* in handheld_host.h. */
+      elmc_int_t handheld_presses_tag;
+      elmc_int_t handheld_taps_tag;
+      elmc_int_t handheld_nfc_tag;
       int dispatch_needs_render;
     } ElmcWorkerState;
 
     int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags);
     int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg);
+    int elmc_worker_capture_view(ElmcWorkerState *state);
     int elmc_worker_dispatch_needs_render(ElmcWorkerState *state);
     ElmcValue *elmc_worker_model(ElmcWorkerState *state);
     ElmcValue *elmc_worker_pending_cmds_borrow(ElmcWorkerState *state);

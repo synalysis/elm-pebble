@@ -9,7 +9,7 @@ defmodule Ide.PebbleToolchain.Elmc do
   alias Ide.PebbleToolchain.Types
 
   @compile_stamp_file ".elmc_compile_stamp.json"
-  @codegen_stamp_keys ~w(entry_module strip_dead_code pebble_int32 prune_runtime prune_native_wrappers prune_direct_generic direct_render_only codegen_profile plan_ir_mode plan_ir_strict prod emit_bytecode)a
+  @codegen_stamp_keys ~w(entry_module strip_dead_code pebble_int32 prune_runtime prune_native_wrappers prune_direct_generic direct_render_only codegen_profile plan_ir_mode plan_ir_strict prod emit_bytecode target)a
 
   @type elmc_compile_opts :: Types.elmc_compile_opts()
   @type elmc_compile_result :: Types.elmc_compile_result()
@@ -43,6 +43,22 @@ defmodule Ide.PebbleToolchain.Elmc do
       codegen_profile: profile
     }
     |> Map.merge(extra)
+    |> put_handheld_target(target_platforms)
+  end
+
+  # A handheld project lists device ids in `target_platforms`. Codegen only
+  # switches off `:target`, so fill that in when the caller did not.
+  defp put_handheld_target(opts, target_platforms) do
+    case Map.get(opts, :target) do
+      target when is_binary(target) and target != "" ->
+        opts
+
+      _ ->
+        case Enum.filter(target_platforms, &Elmc.Backend.Handheld.target?(%{target: &1})) do
+          [] -> opts
+          ids -> Map.put(opts, :target, Enum.join(ids, ","))
+        end
+    end
   end
 
   @spec optimize_for_size?(String.t()) :: boolean()
@@ -353,8 +369,10 @@ defmodule Ide.PebbleToolchain.Elmc do
   end
 
   # Color watches share direct-scene rendering; aplite needs the streaming/boxed path.
+  # Handheld views are command batches, so they stay on the boxed command path.
   defp direct_render_only?(target_platforms) when is_list(target_platforms) do
-    target_platforms != [] and not Enum.member?(target_platforms, "aplite")
+    target_platforms != [] and not Enum.member?(target_platforms, "aplite") and
+      not Enum.any?(target_platforms, &Elmc.Backend.Handheld.target?(%{target: &1}))
   end
 
   # Aplite uses streamed direct-scene commands (`view_commands_append`); generic

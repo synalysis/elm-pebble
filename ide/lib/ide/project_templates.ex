@@ -83,6 +83,34 @@ defmodule Ide.ProjectTemplates do
   def template_keys, do: @template_keys
 
   @doc """
+  True for a Pebble template or a handheld example template.
+  """
+  @spec accepted_template?(term()) :: boolean()
+  def accepted_template?(nil), do: true
+
+  def accepted_template?(template) when is_binary(template) do
+    template in @template_keys or Ide.ProjectTemplates.Handheld.template?(template)
+  end
+
+  def accepted_template?(_), do: false
+
+  @spec handheld_template?(term()) :: boolean()
+  def handheld_template?(template), do: Ide.ProjectTemplates.Handheld.template?(template)
+
+  @spec source_roots_for_template(String.t()) :: [String.t()]
+  def source_roots_for_template(template) do
+    if handheld_template?(template) do
+      Ide.ProjectTemplates.Handheld.source_roots()
+    else
+      ["watch", "protocol", "phone"]
+    end
+  end
+
+  @spec default_template(String.t()) :: String.t()
+  def default_template("handheld"), do: Ide.ProjectTemplates.Handheld.default_template()
+  def default_template(_), do: "starter"
+
+  @doc """
   Absolute path to `priv/project_templates/<dir>` for a template key.
   """
   @spec template_priv_root(String.t()) ::
@@ -187,7 +215,11 @@ defmodule Ide.ProjectTemplates do
   """
   @spec default_release_defaults(String.t()) :: TemplateTypes.release_defaults()
   def default_release_defaults(template) when is_binary(template) do
-    %{"target_platforms" => target_platforms_for_template(template)}
+    if handheld_template?(template) do
+      Ide.ProjectTemplates.Handheld.release_defaults()
+    else
+      %{"target_platforms" => target_platforms_for_template(template)}
+    end
   end
 
   @doc """
@@ -218,8 +250,12 @@ defmodule Ide.ProjectTemplates do
   @doc """
   Returns project templates grouped for the create-project picker UI.
   """
-  @spec picker_categories() :: [TemplateTypes.picker_category()]
-  def picker_categories do
+  @spec picker_categories(String.t()) :: [TemplateTypes.picker_category()]
+  def picker_categories(family \\ "pebble")
+
+  def picker_categories("handheld"), do: Ide.ProjectTemplates.Handheld.picker_categories()
+
+  def picker_categories(_family) do
     @category_order
     |> Enum.map(fn category_id ->
       templates =
@@ -249,9 +285,15 @@ defmodule Ide.ProjectTemplates do
   """
   @spec picker_title(String.t()) :: String.t()
   def picker_title(template_key) when is_binary(template_key) do
-    case Enum.find(options(), fn {_label, key} -> key == template_key end) do
-      {label, _} -> parse_picker_label(label).title
-      nil -> template_key
+    case Ide.ProjectTemplates.Handheld.picker_title(template_key) do
+      title when is_binary(title) ->
+        title
+
+      _ ->
+        case Enum.find(options(), fn {_label, key} -> key == template_key end) do
+          {label, _} -> parse_picker_label(label).title
+          nil -> template_key
+        end
     end
   end
 
@@ -330,7 +372,23 @@ defmodule Ide.ProjectTemplates do
   Applies a selected template to a project workspace.
   """
   @spec apply_template(String.t(), String.t()) :: :ok | {:error, template_error()}
-  def apply_template(template, workspace_path) when template in @template_keys do
+  def apply_template(template, workspace_path)
+      when is_binary(template) and is_binary(workspace_path) do
+    cond do
+      handheld_template?(template) ->
+        Ide.ProjectTemplates.Handheld.seed(workspace_path, template)
+
+      template in @template_keys ->
+        apply_pebble_template(template, workspace_path)
+
+      true ->
+        {:error, {:unknown_template, template}}
+    end
+  end
+
+  def apply_template(template, _workspace_path), do: {:error, {:unknown_template, template}}
+
+  defp apply_pebble_template(template, workspace_path) when template in @template_keys do
     case template do
       "starter" ->
         seed_multi_root_workspace(workspace_path)
@@ -477,8 +535,6 @@ defmodule Ide.ProjectTemplates do
         seed_watch_only_workspace(workspace_path, "game_elmtris")
     end
   end
-
-  def apply_template(template, _workspace_path), do: {:error, {:unknown_template, template}}
 
   @doc """
   Ensures the default companion protocol root exists without overwriting user-authored

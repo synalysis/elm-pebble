@@ -39,6 +39,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     push-project-snapshot
     submit-publish-release
     sideload-publish-release
+    install-flipper
+    install-meowkit
     resolve-publish-check
     prepare-publish-artifact
     export-publish-manifest
@@ -50,6 +52,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     :prepare_publish_artifact,
     :submit_publish_release,
     :sideload_publish_release,
+    :install_flipper,
+    :install_meowkit,
     :push_project_snapshot,
     :export_publish_manifest,
     :export_release_notes
@@ -127,9 +131,12 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      |> assign(:publish_status, :running)
      |> assign(:manifest_export_status, :running)
      |> assign(:release_notes_status, :running)
-     |> start_async(:prepare_release, Auth.carry_current_user(fn ->
-       PublishFlow.run_prepare_release(project, workspace_root, release_summary)
-     end))}
+     |> start_async(
+       :prepare_release,
+       Auth.carry_current_user(fn ->
+         PublishFlow.run_prepare_release(project, workspace_root, release_summary)
+       end)
+     )}
   end
 
   def handle_event("push-project-snapshot", _params, socket) do
@@ -140,9 +147,12 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      socket
      |> assign(:github_push_status, :running)
      |> assign(:github_push_output, nil)
-     |> start_async(:push_project_snapshot, Auth.carry_current_user(fn ->
-       GitHubPush.push_project_snapshot(project, repo_config)
-     end))}
+     |> start_async(
+       :push_project_snapshot,
+       Auth.carry_current_user(fn ->
+         GitHubPush.push_project_snapshot(project, repo_config)
+       end)
+     )}
   end
 
   def handle_event("submit-publish-release", params, socket) do
@@ -156,6 +166,38 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     else
       submit_publish_release(params, socket)
     end
+  end
+
+  def handle_event("install-meowkit", _params, socket) do
+    project = socket.assigns.project
+    workspace_root = Projects.project_workspace_path(project)
+
+    {:noreply,
+     socket
+     |> assign(:meowkit_install_status, :running)
+     |> assign(:meowkit_install_output, nil)
+     |> start_async(
+       :install_meowkit,
+       Auth.carry_current_user(fn ->
+         BuildFlow.install_meowkit(project, workspace_root)
+       end)
+     )}
+  end
+
+  def handle_event("install-flipper", _params, socket) do
+    project = socket.assigns.project
+    workspace_root = Projects.project_workspace_path(project)
+
+    {:noreply,
+     socket
+     |> assign(:flipper_install_status, :running)
+     |> assign(:flipper_install_output, nil)
+     |> start_async(
+       :install_flipper,
+       Auth.carry_current_user(fn ->
+         BuildFlow.install_flipper(project, workspace_root)
+       end)
+     )}
   end
 
   def handle_event("sideload-publish-release", _params, socket) do
@@ -638,6 +680,48 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      socket
      |> assign(:publish_submit_status, :error)
      |> assign(:publish_submit_output, "Store publish task exited: #{inspect(reason)}")}
+  end
+
+  defp do_handle_async(:install_flipper, {:ok, {:ok, output}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:flipper_install_status, :ok)
+     |> assign(:flipper_install_output, output)}
+  end
+
+  defp do_handle_async(:install_flipper, {:ok, {:error, output}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:flipper_install_status, :error)
+     |> assign(:flipper_install_output, output)}
+  end
+
+  defp do_handle_async(:install_flipper, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:flipper_install_status, :error)
+     |> assign(:flipper_install_output, "Flipper install exited: #{inspect(reason)}")}
+  end
+
+  defp do_handle_async(:install_meowkit, {:ok, {:ok, output}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:meowkit_install_status, :ok)
+     |> assign(:meowkit_install_output, output)}
+  end
+
+  defp do_handle_async(:install_meowkit, {:ok, {:error, output}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:meowkit_install_status, :error)
+     |> assign(:meowkit_install_output, output)}
+  end
+
+  defp do_handle_async(:install_meowkit, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:meowkit_install_status, :error)
+     |> assign(:meowkit_install_output, "MeowKit install exited: #{inspect(reason)}")}
   end
 
   defp do_handle_async(:sideload_publish_release, {:ok, {:ok, result}}, socket) do

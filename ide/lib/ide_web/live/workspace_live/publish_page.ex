@@ -18,7 +18,42 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   def render(assigns) do
     ~H"""
     <section
-      :if={@pane == :publish}
+      :if={@pane == :publish and @device_family == "handheld"}
+      class="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold">Publish</h2>
+          <p class="mt-1 text-sm text-zinc-600">
+            Installs this Elm program over USB. Flipper Zero receives the app and starts it. MeowKit receives the app over its USB serial port and starts it. Leave USB Mass Storage turned off.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <.button phx-click="install-flipper" disabled={@flipper_install_status == :running}>
+            {if @flipper_install_status == :running,
+              do: "Installing on Flipper…",
+              else: "Install on Flipper"}
+          </.button>
+          <.button phx-click="install-meowkit" disabled={@meowkit_install_status == :running}>
+            {if @meowkit_install_status == :running,
+              do: "Installing on MeowKit…",
+              else: "Install on MeowKit"}
+          </.button>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-zinc-600">Flipper: {status_label(@flipper_install_status)}</p>
+      <pre
+        :if={@flipper_install_output}
+        class="mt-4 min-h-0 flex-1 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
+      ><%= @flipper_install_output %></pre>
+      <p class="mt-3 text-xs text-zinc-600">MeowKit: {status_label(@meowkit_install_status)}</p>
+      <pre
+        :if={@meowkit_install_output}
+        class="mt-4 min-h-0 flex-1 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
+      ><%= @meowkit_install_output %></pre>
+    </section>
+    <section
+      :if={@pane == :publish and @device_family != "handheld"}
       class="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
     >
       <div class="flex flex-wrap items-start justify-between gap-3">

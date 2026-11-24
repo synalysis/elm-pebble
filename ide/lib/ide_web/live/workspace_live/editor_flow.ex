@@ -542,16 +542,20 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
   def handle_event("add-companion-app", _params, socket) do
     project = socket.assigns.project
 
-    case Projects.add_companion_app(project) do
-      :ok ->
-        {:noreply,
-         socket
-         |> assign(:companion_app_present, true)
-         |> put_flash(:info, "Added companion app and protocol files.")
-         |> refresh_tree()}
+    if Ide.DeviceFamily.handheld?(project) do
+      {:noreply, put_flash(socket, :error, "Handheld apps do not have a companion or protocol.")}
+    else
+      case Projects.add_companion_app(project) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:companion_app_present, true)
+           |> put_flash(:info, "Added companion app and protocol files.")
+           |> refresh_tree()}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not add companion app: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not add companion app: #{inspect(reason)}")}
+      end
     end
   end
 

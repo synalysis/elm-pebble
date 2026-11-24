@@ -184,7 +184,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
         {:noreply, socket}
 
       project ->
-        selected_watch_profile_id = normalize_debugger_watch_profile_id(watch_profile_id)
+        selected_watch_profile_id =
+          normalize_debugger_watch_profile_id(watch_profile_id, project)
+
         project = persist_project_debugger_watch_profile(project, selected_watch_profile_id)
 
         {:ok, _state} =
@@ -196,7 +198,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
          socket
          |> assign(:project, project)
          |> DebuggerSupport.refresh()
-         |> put_flash(:info, "Debugger watch profile set to #{selected_watch_profile_id}.")}
+         |> put_flash(:info, debugger_profile_flash(project, selected_watch_profile_id))}
     end
   end
 
@@ -1004,7 +1006,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   @spec persist_project_debugger_watch_profile(Project.t(), String.t()) :: Project.t()
   defp persist_project_debugger_watch_profile(%Project{} = project, watch_profile_id)
        when is_binary(watch_profile_id) do
-    profile_id = normalize_debugger_watch_profile_id(watch_profile_id)
+    profile_id = normalize_debugger_watch_profile_id(watch_profile_id, project)
     settings = project.debugger_settings || %{}
     updated_settings = Map.put(settings, "watch_profile_id", profile_id)
 
@@ -1137,25 +1139,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   @spec project_debugger_watch_profile_id(Project.t()) :: String.t()
   defp project_debugger_watch_profile_id(%Project{} = project) do
     settings = project.debugger_settings || %{}
-    normalize_debugger_watch_profile_id(Map.get(settings, "watch_profile_id"))
+    Ide.DeviceFamily.normalize_id(project, Map.get(settings, "watch_profile_id"))
   end
 
-  @spec normalize_debugger_watch_profile_id(wire_input()) :: String.t()
-  def normalize_debugger_watch_profile_id(value) when is_binary(value) do
-    normalized = value |> String.trim() |> String.downcase()
+  @spec normalize_debugger_watch_profile_id(wire_input(), Project.t() | nil) :: String.t()
+  def normalize_debugger_watch_profile_id(value, project \\ nil)
 
-    if normalized in debugger_watch_profile_ids(),
-      do: normalized,
-      else: default_debugger_watch_profile_id()
+  def normalize_debugger_watch_profile_id(value, project) when is_binary(value) do
+    Ide.DeviceFamily.normalize_id(project, value)
   end
 
-  def normalize_debugger_watch_profile_id(_), do: default_debugger_watch_profile_id()
+  def normalize_debugger_watch_profile_id(_, project), do: Ide.DeviceFamily.default_id(project)
 
-  @spec debugger_watch_profile_ids() :: [String.t()]
-  defp debugger_watch_profile_ids do
-    Ide.Debugger.watch_profiles()
-    |> Enum.map(&Map.get(&1, "id"))
-    |> Enum.filter(&is_binary/1)
+  defp debugger_profile_flash(project, profile_id) do
+    if Ide.DeviceFamily.handheld?(project) do
+      name = Ide.Handheld.Models.profile(profile_id)["name"]
+      "Debugger device set to #{name}."
+    else
+      "Debugger watch profile set to #{profile_id}."
+    end
   end
 
   @spec open_debugger_trigger_modal(socket(), FlowTypes.live_event_params()) :: socket()
@@ -1393,16 +1395,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   defp contains_any?(text, needles) when is_binary(text) and is_list(needles) do
     Enum.any?(needles, &String.contains?(text, &1))
-  end
-
-  @spec default_debugger_watch_profile_id() :: String.t()
-  defp default_debugger_watch_profile_id do
-    debugger_watch_profile_ids()
-    |> List.first()
-    |> case do
-      id when is_binary(id) -> id
-      _ -> "basalt"
-    end
   end
 
   @spec persist_project_auto_fire_setting(Project.t(), FlowTypes.subscription_toggle_attrs()) ::

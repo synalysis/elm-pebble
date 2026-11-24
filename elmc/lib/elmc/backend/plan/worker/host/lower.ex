@@ -48,7 +48,8 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
           """
         ),
       model_dependent_subs?: has_subscriptions and Map.get(layout, :model_dependent?, true),
-      last_dispatch_cmd_cap: last_dispatch_cmd_cap(opts)
+      last_dispatch_cmd_cap: last_dispatch_cmd_cap(opts),
+      capture_view?: Elmc.Backend.Handheld.target?(opts)
     }
   end
 
@@ -109,6 +110,11 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
 
   defp last_dispatch_cmd_cap(opts) do
     cond do
+      # The handheld entry replays this snapshot after init and update.
+      # A zero cap would drop every draw and hardware command.
+      Elmc.Backend.Handheld.target?(opts) ->
+        8
+
       # Watch size builds and prod pebble binaries do not keep the debugger
       # last-dispatch snapshot (~1.5 KiB BSS when cap=8).
       Map.get(opts, :pebble_int32) == true and Map.get(opts, :prod) == true ->

@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
   import Phoenix.LiveView, only: [connected?: 1, push_event: 3, start_async: 3]
 
+  alias Ide.DeviceFamily
   alias Ide.Projects.Project
   alias Ide.Compiler
   alias Ide.Auth
@@ -1300,14 +1301,16 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   def creatable_source_roots(%Project{} = project) do
     workspace_root = Projects.project_workspace_path(project)
 
+    hidden = if DeviceFamily.handheld?(project), do: ["protocol", "phone"], else: ["protocol"]
+
     project.source_roots
     |> List.wrap()
-    |> Enum.reject(&(&1 == "protocol"))
+    |> Enum.reject(&(&1 in hidden))
     |> Enum.filter(fn source_root ->
       File.exists?(Path.join([workspace_root, source_root, "elm.json"]))
     end)
     |> case do
-      [] -> ["watch"]
+      [] -> [if(DeviceFamily.handheld?(project), do: "app", else: "watch")]
       roots -> roots
     end
   end

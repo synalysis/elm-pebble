@@ -202,6 +202,12 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
       "Elm.Kernel.PebbleWatch.onButtonRaw" ->
         button_raw_sub_params(args)
 
+      "Handheld.Input.onPress" ->
+        handheld_press_params(args)
+
+      "Pkg.app.Handheld.Input.onPress" ->
+        handheld_press_params(args)
+
       _ ->
         case List.last(args) do
           nil -> []
@@ -404,9 +410,40 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
       "Elm.Kernel.PebbleWatch.onTouchPanVertical" -> "ELMC_SUBSCRIPTION_TOUCH_PAN"
       "Pebble.Touch.onSwipe" -> "ELMC_SUBSCRIPTION_TOUCH_SWIPE"
       "Elm.Kernel.PebbleWatch.onTouchSwipe" -> "ELMC_SUBSCRIPTION_TOUCH_SWIPE"
+      "Handheld.Input.presses" -> "134217728"
+      "Pkg.app.Handheld.Input.presses" -> "134217728"
+      "Handheld.Input.taps" -> "268435456"
+      "Pkg.app.Handheld.Input.taps" -> "268435456"
+      "Handheld.Nfc.onTag" -> "536870912"
+      "Pkg.app.Handheld.Nfc.onTag" -> "536870912"
+      "Handheld.Input.onPress" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
+      "Pkg.app.Handheld.Input.onPress" -> "ELMC_SUBSCRIPTION_BUTTON_RAW"
       _ -> nil
     end
   end
+
+  # Declaration order of Handheld.Input.Button, matching HANDHELD_BTN_*.
+  @handheld_buttons %{
+    "A" => 1,
+    "B" => 2,
+    "Up" => 3,
+    "Down" => 4,
+    "Left" => 5,
+    "Right" => 6,
+    "Select" => 7,
+    "Back" => 8
+  }
+
+  defp handheld_press_params([button, msg]) do
+    with id when is_integer(id) <- Map.get(@handheld_buttons, button_ctor_short_name(button)),
+         %{op: :msg_tag_expr} = tag <- SpecialValues.msg_tag_param(msg) do
+      [%{op: :int_literal, value: id}, %{op: :int_literal, value: 1}, tag]
+    else
+      _ -> []
+    end
+  end
+
+  defp handheld_press_params(_), do: []
 
   @spec frame_subscription_c_expr([Types.ir_expr()]) :: subscription_mask_c_result()
   defp frame_subscription_c_expr([%{op: :int_literal, value: ms}, _to_msg]) when is_integer(ms) do

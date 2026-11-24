@@ -22,6 +22,7 @@ defmodule IdeWeb.ProjectsLive.Assigns do
           optional(:firebase_id_token_exp) => integer() | nil,
           optional(:firebase_config) => Ide.Auth.Types.firebase_config(),
           optional(:projects) => [Project.t()],
+          optional(:device_family) => String.t(),
           optional(:template_categories) => [TemplateTypes.picker_category()],
           optional(:template_target_filter) => String.t(),
           optional(:template_companion_filter) => String.t(),

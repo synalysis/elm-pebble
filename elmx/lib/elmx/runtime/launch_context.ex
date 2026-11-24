@@ -27,8 +27,93 @@ defmodule Elmx.Runtime.LaunchContext do
     "QuickLaunchUnknown" => -1
   }
 
+  @handheld_ids ~w(meowkit flipper-zero)
+
   @spec normalize(Types.wire_map()) :: Types.launch_context()
   def normalize(context) when is_map(context) do
+    if handheld?(context), do: normalize_handheld(context), else: normalize_pebble(context)
+  end
+
+  def normalize(_), do: normalize(%{})
+
+  defp handheld?(context) do
+    kind = map_value(context, :kind)
+
+    device =
+      map_value(context, :device) ||
+        map_value(context, :watch_profile_id) ||
+        map_value(context, :watchProfileId)
+
+    kind == "handheld" or device_id(device) in @handheld_ids
+  end
+
+  defp normalize_handheld(context) do
+    device =
+      device_id(
+        map_value(context, :device) ||
+          map_value(context, :watch_profile_id) ||
+          map_value(context, :watchProfileId)
+      ) || "meowkit"
+
+    {default_w, default_h, default_depth, default_touch} = handheld_defaults(device)
+    screen = map_value(context, :screen) || %{}
+
+    touch =
+      case map_value(context, :touch) do
+        nil -> optional_bool(map_value(context, :has_touch), default_touch)
+        value -> value == true
+      end
+
+    %{
+      "device" => device_ctor(device),
+      "touch" => touch,
+      "screen" => %{
+        "width" => positive_int(map_value(screen, :width), default_w),
+        "height" => positive_int(map_value(screen, :height), default_h),
+        "colorDepth" =>
+          positive_int(
+            map_value(screen, :colorDepth) || map_value(screen, :color_depth),
+            default_depth(screen, default_depth)
+          )
+      }
+    }
+  end
+
+  defp handheld_defaults("flipper-zero"), do: {128, 64, 1, false}
+  defp handheld_defaults(_), do: {320, 240, 16, true}
+
+  # Nullary Elm constructors are atoms in the debugger and 1-based declaration
+  # tags on device: MeowKit = 1, FlipperZero = 2.
+  defp device_ctor("flipper-zero"), do: :FlipperZero
+  defp device_ctor(_), do: :MeowKit
+
+  defp device_id(:FlipperZero), do: "flipper-zero"
+  defp device_id(:MeowKit), do: "meowkit"
+  defp device_id("FlipperZero"), do: "flipper-zero"
+  defp device_id("MeowKit"), do: "meowkit"
+  defp device_id(%{"ctor" => "FlipperZero"}), do: "flipper-zero"
+  defp device_id(%{ctor: :FlipperZero}), do: "flipper-zero"
+  defp device_id(%{"ctor" => "MeowKit"}), do: "meowkit"
+  defp device_id(%{ctor: :MeowKit}), do: "meowkit"
+  defp device_id("flipper-zero"), do: "flipper-zero"
+  defp device_id("meowkit"), do: "meowkit"
+  defp device_id(_), do: nil
+
+  defp default_depth(screen, fallback) do
+    case map_value(screen, :color_mode) || map_value(screen, :colorMode) do
+      "BlackWhite" -> 1
+      "Color" -> 16
+      _ -> fallback
+    end
+  end
+
+  defp positive_int(value, _fallback) when is_integer(value) and value > 0, do: value
+  defp positive_int(_, fallback), do: fallback
+
+  defp optional_bool(nil, default), do: default
+  defp optional_bool(value, _default), do: value == true
+
+  defp normalize_pebble(context) when is_map(context) do
     reason =
       case map_value(context, :reason) do
         %{"ctor" => _} = value -> value
@@ -81,8 +166,6 @@ defmodule Elmx.Runtime.LaunchContext do
     )
     |> Map.put_new("configurationResponse", nil)
   end
-
-  def normalize(_), do: normalize(%{})
 
   @spec launch_reason_to_int(Types.launch_reason_like()) :: integer()
   def launch_reason_to_int(reason) do

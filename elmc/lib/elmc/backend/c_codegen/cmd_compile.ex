@@ -24,16 +24,72 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
         {code, out, counter}
 
       :error ->
-        if length(params) > @max_native_params or not native_params?(params, env) do
-          CollectionCompile.compile(
-            SpecialValues.encoded_cmd_as_tuple(kind, params),
-            env,
-            counter
-          )
-        else
-          compile_native_cmd(kind, params, env, counter)
+        case text_bearing_params(params, env) do
+          {:ok, ints, text} ->
+            compile_text_bearing_cmd(kind, ints, text, env, counter)
+
+          :error ->
+            compile_cmd_without_text(kind, params, env, counter)
         end
     end
+  end
+
+  defp compile_cmd_without_text(kind, params, env, counter) do
+    if length(params) > @max_native_params or not native_params?(params, env) do
+      CollectionCompile.compile(
+        SpecialValues.encoded_cmd_as_tuple(kind, params),
+        env,
+        counter
+      )
+    else
+      compile_native_cmd(kind, params, env, counter)
+    end
+  end
+
+  # One string rides in the command text slot. The remaining arguments stay integers.
+  # elmc_as_int on a string is 0, which is how a label used to disappear.
+  defp text_bearing_params(params, env) do
+    case Enum.split_with(params, &NativeString.expr?(&1, env)) do
+      {[text], ints} when length(ints) <= @max_native_params ->
+        if Enum.all?(ints, &native_param?(&1, env)), do: {:ok, ints, text}, else: :error
+
+      _ ->
+        :error
+    end
+  end
+
+  defp compile_text_bearing_cmd(kind, ints, text, env, counter) do
+    {kind_code, kind_ref, counter} = compile_kind_ref(kind, env, counter)
+
+    {param_parts, counter} =
+      Enum.map_reduce(ints, counter, fn param, counter ->
+        {code, ref, counter} = compile_param_ref(param, env, counter)
+        {{code, ref}, counter}
+      end)
+
+    {text_code, text_ref, cleanup, counter} = NativeString.compile_expr(text, env, counter)
+    {out, next} = RcRuntimeEmit.compile_call_result_slot(env, counter)
+    int_refs = Enum.map(param_parts, fn {_, ref} -> ref end)
+    padded = int_refs ++ List.duplicate("0", @max_native_params - length(int_refs))
+
+    args =
+      Enum.join([Integer.to_string(length(ints)), kind_ref | padded] ++ [text_ref], ", ")
+
+    prefix =
+      [kind_code | Enum.map(param_parts, fn {code, _} -> code end)]
+      |> Enum.concat([text_code])
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    cleanup_code = Enum.map_join(cleanup, "\n", fn var -> "elmc_release(#{var});" end)
+
+    code = """
+    #{prefix}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_cmd_text", args)}
+      #{cleanup_code}
+    """
+
+    {code, out, next}
   end
 
   @spec native_params?([Types.expr()], Types.compile_env()) :: boolean()

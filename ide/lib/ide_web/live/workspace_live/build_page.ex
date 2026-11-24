@@ -26,12 +26,25 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
         class="mt-3 flex items-center gap-2"
       >
         <.button type="submit" disabled={@build_status == :running}>
-          {if @build_status == :running,
-            do: "Building project roots...",
-            else: "Build all project roots"}
+          {cond do
+            @build_status == :running and @device_family == "handheld" ->
+              "Building…"
+
+            @build_status == :running ->
+              "Building project roots..."
+
+            @device_family == "handheld" ->
+              "Build"
+
+            true ->
+              "Build all project roots"
+          end}
         </.button>
         <input type="hidden" name="build[manifest_strict]" value="false" />
-        <label class="ml-2 inline-flex items-center gap-2 text-xs text-zinc-700">
+        <label
+          :if={@device_family != "handheld"}
+          class="ml-2 inline-flex items-center gap-2 text-xs text-zinc-700"
+        >
           <input
             type="checkbox"
             name="build[manifest_strict]"
@@ -69,7 +82,9 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
         </div>
       </div>
       <p class="mt-2 text-sm text-zinc-600">
-        Runs `elmc check`, `elmc compile`, and `elmc manifest` for each project root, then packages the PBW with the configured target platforms.
+        {if @device_family == "handheld",
+          do: "Checks and compiles the app for #{handheld_device_name(@selected_emulator_target)}, then packs an SD package or a FAP scaffold.",
+          else: "Runs `elmc check`, `elmc compile`, and `elmc manifest` for each project root, then packages the PBW with the configured target platforms."}
       </p>
       <div
         :if={@build_issues != []}
@@ -93,6 +108,10 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
   end
 
   @spec check_status_label(flow_status() | atom()) :: String.t()
+  defp handheld_device_name(id) do
+    Ide.Handheld.Models.profile(id)["name"]
+  end
+
   defp check_status_label(:idle), do: "idle"
   defp check_status_label(:running), do: "running"
   defp check_status_label(:ok), do: "ok"

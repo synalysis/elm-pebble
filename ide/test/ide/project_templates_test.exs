@@ -21,6 +21,34 @@ defmodule Ide.ProjectTemplatesTest do
     assert "gabbro" in platforms
   end
 
+  test "handheld projects seed one app and list hardware examples" do
+    categories = ProjectTemplates.picker_categories("handheld")
+    assert Enum.map(categories, & &1.id) == ["starter", "api"]
+
+    keys = categories |> Enum.flat_map(& &1.templates) |> Enum.map(& &1.key)
+    assert "handheld-starter" in keys
+    assert "handheld-demo-nfc" in keys
+    assert "handheld-demo-usb" in keys
+    refute Enum.any?(keys, &String.starts_with?(&1, "watch"))
+
+    slug = "handheld-template-#{System.unique_integer([:positive])}"
+
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "HandheldTemplate",
+               "slug" => slug,
+               "template" => "handheld-demo-nfc"
+             })
+
+    assert project.source_roots == ["app"]
+    assert project.release_defaults["device_family"] == "handheld"
+    assert {:ok, main} = Projects.read_source_file(project, "app", "src/Main.elm")
+    assert String.contains?(main, "Handheld.Nfc")
+    assert String.contains?(main, "Nfc.scan")
+    refute File.exists?(Path.join(Projects.project_workspace_path(project), "protocol/elm.json"))
+    refute File.exists?(Path.join(Projects.project_workspace_path(project), "phone/elm.json"))
+  end
+
   test "picker_categories groups templates for the create-project modal" do
     categories = ProjectTemplates.picker_categories()
 
