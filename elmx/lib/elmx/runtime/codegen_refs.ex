@@ -87,6 +87,9 @@ defmodule Elmx.Runtime.CodegenRefs do
   @spec pebble_dispatch() :: String.t()
   def pebble_dispatch, do: "Elmx.Runtime.Pebble.Dispatch"
 
+  @spec pebble_handheld() :: String.t()
+  def pebble_handheld, do: "Elmx.Runtime.Pebble.Handheld"
+
   @module_ref_funs %{
     Elmx.Runtime.Core => :core,
     Elmx.Runtime.Core.List => :core_list,
@@ -109,6 +112,7 @@ defmodule Elmx.Runtime.CodegenRefs do
     Elmx.Runtime.Pebble.WatchInfo => :pebble_watch_info,
     Elmx.Runtime.Pebble.Alarm => :pebble_alarm,
     Elmx.Runtime.Pebble.Dispatch => :pebble_dispatch,
+    Elmx.Runtime.Pebble.Handheld => :pebble_handheld,
     Elmx.Runtime.Http => :http,
     Elmx.Runtime.Values => :values,
     Elmx.Runtime.Cmd => :cmd

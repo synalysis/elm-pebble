@@ -90,6 +90,7 @@ defmodule Elmx.CodegenRefsTest do
                Elmx.Runtime.Pebble.WatchInfo,
                Elmx.Runtime.Pebble.Alarm,
                Elmx.Runtime.Pebble.Dispatch,
+               Elmx.Runtime.Pebble.Handheld,
                Elmx.Runtime.Http,
                Elmx.Runtime.Values,
                Elmx.Runtime.Cmd
